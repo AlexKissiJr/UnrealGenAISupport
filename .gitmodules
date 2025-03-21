@@ -1,0 +1,3 @@
+[submodule "Plugins/GenerativeAISupport"]
+	path = Plugins/GenerativeAISupport
+	url = https://github.com/prajwalshettydev/UnrealGenAISupport

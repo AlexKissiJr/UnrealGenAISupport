@@ -27,7 +27,12 @@ public class GenerativeAISupport : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core", "Engine", "ImageDownload", "ImageDownload"
+				"Core", "Engine", "ImageDownload", "ImageDownload",
+				// New dependencies
+				"CoreUObject", "UnrealEd", 
+				"Networking", "Sockets", "Slate", "SlateCore", "EditorStyle",
+				"DeveloperSettings", "Projects", "ToolMenus",
+				"BlueprintGraph", "GraphEditor", "KismetCompiler"
 				// ... add other public dependencies that you statically link with here ...
 			}
 		);
@@ -47,7 +52,10 @@ public class GenerativeAISupport : ModuleRules
 				"UnrealEd",
 				"MaterialEditor",
 				"MaterialUtilities",
-				"BlueprintGraph"
+				"BlueprintGraph",
+				// New dependencies
+				"JsonUtilities", "Settings", "InputCore", "PythonScriptPlugin",
+				"Kismet", "KismetWidgets"
 				// ... add private dependencies that you statically link with here ...	
 			}
 		);
