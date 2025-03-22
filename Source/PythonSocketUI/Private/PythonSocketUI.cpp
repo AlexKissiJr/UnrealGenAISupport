@@ -655,78 +655,83 @@ void FPythonSocketUIModule::StartSocketServer()
 
 void FPythonSocketUIModule::StopSocketServer()
 {
-    if (!bIsSocketServerRunning)
-    {
-        PYSOCKET_LOG_WARNING("Socket server is not running, ignoring stop request");
-        return;
-    }
+	PYSOCKET_LOG_WARNING("Stopping socket server...");
+	if (!bIsSocketServerRunning)
+	{
+		PYSOCKET_LOG_WARNING("Socket server not running.");
+		bIsSocketServerRunning = false;
+		return;
+	}
 
-    PYSOCKET_LOG_INFO("Stopping Python socket server");
-    
-    IPythonScriptPlugin* PythonPlugin = IPythonScriptPlugin::Get();
-    
-    if (!PythonPlugin)
-    {
-        PYSOCKET_LOG_ERROR("Python plugin not available");
-        bIsSocketServerRunning = false;
-        return;
-    }
-    
-    // Use Python script plugin to stop the socket server
-    // Note: This is a simplified example. You would need to implement a proper shutdown mechanism.
-    FString PythonCommand = TEXT("import sys\n"
-                                "import threading\n"
-                                "import importlib\n"
-                                "\n"
-                                "# Attempt to stop the server by removing the module\n"
-                                "try:\n"
-                                "    if 'unreal_socket_server' in sys.modules:\n"
-                                "        del sys.modules['unreal_socket_server']\n"
-                                "        print(\"Python socket server module removed\")\n"
-                                "    \n"
-                                "    # Get all running threads and identify socket server threads\n"
-                                "    for thread in threading.enumerate():\n"
-                                "        if 'socket_server' in thread.name.lower():\n"
-                                "            print(f\"Found socket server thread: {thread.name}\")\n"
-                                "            # Cannot forcefully terminate threads in Python\n"
-                                "            # The proper solution would be to have a stop flag in the server\n"
-                                "    \n"
-                                "    print(\"Python socket server stopped (next time it will restart fresh)\")\n"
-                                "    True\n"
-                                "except Exception as e:\n"
-                                "    print(f\"Error stopping Python socket server: {str(e)}\")\n"
-                                "    False");
+	FString Result;
 
-    FPythonCommandEx PythonCommandEx;
-    PythonCommandEx.Command = PythonCommand;
-    if (PythonPlugin->ExecPythonCommandEx(PythonCommandEx))
-    {
-        // Get the result from the CommandResult field
-        FString Result = PythonCommandEx.CommandResult;
-        
-        // Check if the script returned success
-        if (Result.Contains(TEXT("True")))
-        {
-            PYSOCKET_LOG_INFO("Python socket server stopped successfully");
-            bIsSocketServerRunning = false;
-        }
-        else
-        {
-            PYSOCKET_LOG_ERROR("Failed to stop Python socket server: %s", *Result);
-        }
-    }
-    else
-    {
-        PYSOCKET_LOG_ERROR("Failed to execute Python command to stop server");
-        // Assume it's stopped anyway since we removed the module
-        bIsSocketServerRunning = false;
-    }
-    
-    // Refresh the toolbar to update the status indicator
-    if (UToolMenus* ToolMenus = UToolMenus::Get())
-    {
-        ToolMenus->RefreshAllWidgets();
-    }
+	FString PyCmd = TEXT(
+		"import sys\n"
+		"import unreal\n"
+		"success = False\n"
+		"try:\n"
+		"    if 'unreal_socket_server' in sys.modules:\n"
+		"        unreal_socket_server = sys.modules['unreal_socket_server']\n"
+		"        unreal_socket_server.stop_server()\n"
+		"        sys.modules.pop('unreal_socket_server', None)\n"
+		"        print('Python socket server module removed')\n"
+		"        print('Python socket server stopped')\n"
+		"        success = True\n"
+		"    else:\n"
+		"        print('Error: unreal_socket_server module not found')\n"
+		"    import threading\n"
+		"    print('Running threads: ' + str([t.name for t in threading.enumerate()]))\n"
+		"except Exception as e:\n"
+		"    print('Error stopping socket server: ' + str(e))\n"
+		"print(success)\n"
+	);
+
+	const bool bCommandSuccessful = RunPythonCommand(PyCmd, Result);
+	PYSOCKET_LOG_INFO("Stop server command result: %s", *Result);
+
+	// Check if the result contains success indicators
+	bool bServerStopped = false;
+	
+	// Check for explicit success messages
+	if (Result.Contains(TEXT("Python socket server module removed")) || 
+	    Result.Contains(TEXT("Python socket server stopped")))
+	{
+		bServerStopped = true;
+	}
+	// Check for the literal string "True"
+	else if (Result.Contains(TEXT("True")))
+	{
+		bServerStopped = true;
+	}
+	// If the result is empty, assume success
+	else if (Result.IsEmpty() || Result.Len() == 0)
+	{
+		bServerStopped = true;
+	}
+	// Fallback - if no error message is found, consider it a success
+	else if (!Result.Contains(TEXT("Error")))
+	{
+		bServerStopped = true;
+	}
+
+	if (bCommandSuccessful && bServerStopped)
+	{
+		PYSOCKET_LOG_INFO("Python socket server stopped successfully.");
+		bIsSocketServerRunning = false;
+	}
+	else
+	{
+		PYSOCKET_LOG_ERROR("Failed to stop Python socket server: %s", *Result);
+		// Even if there was an error, we'll assume the server is no longer running
+		// This helps recover from inconsistent states
+		bIsSocketServerRunning = false;
+	}
+
+	// Refresh the toolbar to update the status
+	if (UToolMenus* ToolMenus = UToolMenus::Get())
+	{
+		ToolMenus->RefreshAllWidgets();
+	}
 }
 
 // Function to check if Python is available and debug issues

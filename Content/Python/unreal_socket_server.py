@@ -1,200 +1,157 @@
-import unreal
 import socket
-import threading
 import json
-import traceback
+import unreal
+import threading
 import time
-from queue import Queue
+from typing import Dict, Any, Tuple, List, Optional
 
-# Set up logging
-log = unreal.log
-display = lambda msg: log(msg)
-warning = lambda msg: log(msg, target_name="LogPythonSocket", verbosity=unreal.LogVerbosity.WARNING)
-error = lambda msg: log(msg, target_name="LogPythonSocket", verbosity=unreal.LogVerbosity.ERROR)
+# Import handlers
+from handlers import basic_commands, actor_commands, blueprint_commands
+from utils import logging as log
 
-# Command dispatcher to handle different commands
+# Global queues and state
+command_queue = []
+response_dict = {}
+
+
 class CommandDispatcher:
+    """
+    Dispatches commands to appropriate handlers based on command type
+    """
     def __init__(self):
-        self.commands = {}
-        self.register_default_commands()
-    
-    def register_command(self, command_name, handler_function):
-        self.commands[command_name.lower()] = handler_function
-    
-    def register_default_commands(self):
-        # Register some basic commands
-        self.register_command("ping", self.ping_handler)
-        self.register_command("exec", self.exec_handler)
-        
-    def process_command(self, command_data):
-        try:
-            if not isinstance(command_data, dict):
-                return {"error": "Invalid command format, expected JSON object"}
-            
-            command = command_data.get("command", "").lower()
-            
-            if not command:
-                return {"error": "No command specified"}
-            
-            if command not in self.commands:
-                return {"error": f"Unknown command: {command}"}
-            
-            return self.commands[command](command_data)
-            
-        except Exception as e:
-            error_msg = f"Error processing command: {str(e)}\n{traceback.format_exc()}"
-            error(error_msg)
-            return {"error": error_msg}
-    
-    # Command handlers
-    def ping_handler(self, data):
-        return {"result": "pong", "timestamp": time.time()}
-    
-    def exec_handler(self, data):
-        code = data.get("code", "")
-        if not code:
-            return {"error": "No code provided to execute"}
-        
-        try:
-            # Execute the Python code in the Unreal context
-            result = {}
-            exec(f"global exec_result\nexec_result = {code}", globals())
-            result["result"] = globals().get("exec_result", None)
-            return result
-        except Exception as e:
-            error_msg = f"Error executing code: {str(e)}\n{traceback.format_exc()}"
-            error(error_msg)
-            return {"error": error_msg}
+        # Register command handlers
+        self.handlers = {
+            "handshake": self._handle_handshake,
 
-# Global state
+            # Basic object commands
+            "spawn": basic_commands.handle_spawn,
+            "create_material": basic_commands.handle_create_material,
+            "modify_object": actor_commands.handle_modify_object,
+
+            # Blueprint commands
+            "create_blueprint": blueprint_commands.handle_create_blueprint,
+            "add_component": blueprint_commands.handle_add_component,
+            "add_variable": blueprint_commands.handle_add_variable,
+            "add_function": blueprint_commands.handle_add_function,
+            "add_node": blueprint_commands.handle_add_node,
+            "connect_nodes": blueprint_commands.handle_connect_nodes,
+            "compile_blueprint": blueprint_commands.handle_compile_blueprint,
+            "spawn_blueprint": blueprint_commands.handle_spawn_blueprint,
+            "get_node_guid": blueprint_commands.handle_get_node_guid,
+            
+            # Bulk commands
+            "add_nodes_bulk": blueprint_commands.handle_add_nodes_bulk,      # Add this line
+            "connect_nodes_bulk": blueprint_commands.handle_connect_nodes_bulk
+        }
+
+    def dispatch(self, command: Dict[str, Any]) -> Dict[str, Any]:
+        """Dispatch command to appropriate handler"""
+        command_type = command.get("type")
+        if command_type not in self.handlers:
+            return {"success": False, "error": f"Unknown command type: {command_type}"}
+
+        try:
+            handler = self.handlers[command_type]
+            return handler(command)
+        except Exception as e:
+            log.log_error(f"Error processing command: {str(e)}")
+            return {"success": False, "error": str(e)}
+
+    def _handle_handshake(self, command: Dict[str, Any]) -> Dict[str, Any]:
+        """Built-in handler for handshake command"""
+        message = command.get("message", "")
+        log.log_info(f"Handshake received: {message}")
+        return {"success": True, "message": f"Received: {message}"}
+
+
+# Create global dispatcher instance
 dispatcher = CommandDispatcher()
-main_thread_queue = Queue()
-server_thread = None
-server_socket = None
-running = False
 
-# Function to handle individual client connections
-def handle_client(client_socket, client_address):
-    display(f"Client connected: {client_address}")
-    try:
-        while running:
-            try:
-                # Receive data from client
-                data = client_socket.recv(4096)
-                if not data:
-                    break
-                
-                # Decode and parse JSON
-                try:
-                    command_data = json.loads(data.decode('utf-8'))
-                    display(f"Received command: {command_data}")
-                    
-                    # Process command on main thread to ensure thread safety
-                    result_future = unreal.PythonCallableResult()
-                    unreal.PythonCallable.call_on_game_thread(lambda: dispatcher.process_command(command_data), result_future)
-                    
-                    # Wait for result and send back
-                    response = result_future.get()
-                    client_socket.sendall(json.dumps(response).encode('utf-8'))
-                    
-                except json.JSONDecodeError:
-                    error(f"Invalid JSON received: {data.decode('utf-8')}")
-                    client_socket.sendall(json.dumps({"error": "Invalid JSON"}).encode('utf-8'))
-                
-            except socket.timeout:
-                # Socket timeout, check if we're still running
-                continue
-            except Exception as e:
-                error(f"Error handling client: {str(e)}")
-                break
-                
-    finally:
-        client_socket.close()
-        display(f"Client disconnected: {client_address}")
 
-# Function to run the server in a background thread
-def run_server():
-    global running, server_socket
-    
+def process_commands(delta_time=None):
+    """Process commands on the main thread"""
+    if not command_queue:
+        return
+
+    command_id, command = command_queue.pop(0)
+    log.log_info(f"Processing command on main thread: {command}")
+
     try:
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
-        # Bind to port 9877
-        server_socket.bind(('0.0.0.0', 9877))
-        server_socket.listen(5)
-        server_socket.settimeout(1.0)  # 1 second timeout for accepting connections
-        
-        display("Socket server listening on 0.0.0.0:9877")
-        
-        while running:
-            try:
-                client_socket, client_address = server_socket.accept()
-                client_socket.settimeout(1.0)  # 1 second timeout for receiving data
-                
-                # Start a new thread to handle this client
-                client_thread = threading.Thread(
-                    target=handle_client,
-                    args=(client_socket, client_address),
-                    name=f"SocketClient-{client_address[0]}:{client_address[1]}"
-                )
-                client_thread.daemon = True
-                client_thread.start()
-                
-            except socket.timeout:
-                # Socket timeout, continue and check if we're still running
-                continue
-            except Exception as e:
-                if running:  # Only log if we're still supposed to be running
-                    error(f"Error accepting connection: {str(e)}")
-                break
-                
+        response = dispatcher.dispatch(command)
+        response_dict[command_id] = response
     except Exception as e:
-        error(f"Server error: {str(e)}")
-    finally:
-        if server_socket:
-            server_socket.close()
-            server_socket = None
-        display("Socket server stopped")
+        log.log_error(f"Error processing command: {str(e)}", include_traceback=True)
+        response_dict[command_id] = {"success": False, "error": str(e)}
 
-# Start the server
-def start_server():
-    global running, server_thread
-    
-    if running:
-        warning("Server already running")
-        return
-    
-    running = True
-    server_thread = threading.Thread(target=run_server, name="SocketServerThread")
-    server_thread.daemon = True
-    server_thread.start()
-    
-    display("Socket server started")
 
-# Stop the server
-def stop_server():
-    global running, server_thread, server_socket
-    
-    if not running:
-        warning("Server not running")
-        return
-    
-    running = False
-    
-    # Close the server socket to unblock accept()
-    if server_socket:
+def socket_server_thread():
+    """Socket server running in a separate thread"""
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind(('localhost', 9877))
+    server_socket.listen(1)
+    log.log_info("Unreal Engine socket server started on port 9877")
+
+    command_counter = 0
+
+    while True:
         try:
-            server_socket.close()
-        except:
-            pass
-    
-    # Wait for server thread to terminate
-    if server_thread and server_thread.is_alive():
-        server_thread.join(2.0)  # Wait up to 2 seconds
-    
-    server_thread = None
-    display("Socket server stopped")
+            conn, addr = server_socket.accept()
+            data = conn.recv(4096)
+            if data:
+                command = json.loads(data.decode())
+                log.log_info(f"Received command: {command}")
 
-# Auto-start the server when the module is imported
-start_server()
+                # For handshake, we can respond directly from the thread
+                if command.get("type") == "handshake":
+                    response = dispatcher.dispatch(command)
+                    conn.sendall(json.dumps(response).encode())
+                else:
+                    # For other commands, queue them for main thread execution
+                    command_id = command_counter
+                    command_counter += 1
+                    command_queue.append((command_id, command))
+
+                    # Wait for the response with a timeout
+                    timeout = 10  # seconds
+                    start_time = time.time()
+                    while command_id not in response_dict and time.time() - start_time < timeout:
+                        time.sleep(0.1)
+
+                    if command_id in response_dict:
+                        response = response_dict.pop(command_id)
+                        conn.sendall(json.dumps(response).encode())
+                    else:
+                        error_response = {"success": False, "error": "Command timed out"}
+                        conn.sendall(json.dumps(error_response).encode())
+            conn.close()
+        except Exception as e:
+            log.log_error(f"Error in socket server: {str(e)}", include_traceback=True)
+
+
+# Register tick function to process commands on main thread
+def register_command_processor():
+    """Register the command processor with Unreal's tick system"""
+    unreal.register_slate_post_tick_callback(process_commands)
+    log.log_info("Command processor registered")
+
+
+# Initialize the server
+def initialize_server():
+    """Initialize and start the socket server"""
+    # Start the server thread
+    thread = threading.Thread(target=socket_server_thread)
+    thread.daemon = True
+    thread.start()
+    log.log_info("Socket server thread started")
+
+    # Register the command processor on the main thread
+    register_command_processor()
+
+    log.log_info("Unreal Engine AI command server initialized successfully")
+    log.log_info("Available commands:")
+    log.log_info("  - Basic: handshake, spawn, create_material, modify_object")
+    log.log_info("  - Blueprint: create_blueprint, add_component, add_variable, add_function, add_node, connect_nodes, compile_blueprint, spawn_blueprint, add_nodes_bulk, connect_nodes_bulk")
+
+# Auto-start the server when this module is imported
+initialize_server()
