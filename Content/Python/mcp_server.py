@@ -1,10 +1,16 @@
 import socket
 import json
 import sys
+import os
 from mcp.server.fastmcp import FastMCP
 
 # THIS FILE WILL RUN OUTSIDE THE UNREAL ENGINE SCOPE, 
 # DO NOT IMPORT UNREAL MODULES HERE OR EXECUTE IT IN THE UNREAL ENGINE PYTHON INTERPRETER
+
+# Get configuration from environment variables or use defaults
+UNREAL_HOST = os.environ.get('UNREAL_HOST', 'localhost')
+UNREAL_PORT = int(os.environ.get('UNREAL_PORT', 9877))
+API_KEY = os.environ.get('UNREAL_API_KEY', 'your_default_api_key')  # Should match key in unreal_socket_server.py
 
 # Create an MCP server
 mcp = FastMCP("UnrealHandshake")
@@ -13,7 +19,11 @@ mcp = FastMCP("UnrealHandshake")
 def send_to_unreal(command):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.connect(('localhost', 9877))  # Unreal listens on port 9877
+            # Add API key to all commands except handshake
+            if "type" in command and command["type"] != "handshake":
+                command["api_key"] = API_KEY
+                
+            s.connect((UNREAL_HOST, UNREAL_PORT))  # Unreal listens on the configured port
             s.sendall(json.dumps(command).encode())
             response = s.recv(4096)  # Increased buffer size
             return json.loads(response.decode())
@@ -556,6 +566,7 @@ def connect_blueprint_nodes_bulk(blueprint_path: str, function_id: str, connecti
         return f"Successfully connected {len(connections)} node pairs in Blueprint at {blueprint_path}"
     else:
         return f"Failed to connect nodes: {response.get('error', 'Unknown error')}"
+
 @mcp.tool()
 def get_blueprint_node_guid(blueprint_path: str, graph_type: str = "EventGraph", node_name: str = None, function_id: str = None) -> str:
     """
@@ -585,13 +596,38 @@ def get_blueprint_node_guid(blueprint_path: str, graph_type: str = "EventGraph",
     else:
         return f"Failed to get node GUID: {response.get('error', 'Unknown error')}"
 
-
-if __name__ == "__main__":
-    import traceback
+# Add a health check function for the web backend
+@mcp.tool()
+def check_unreal_connection() -> str:
+    """
+    Check if the connection to Unreal Engine is working
+    
+    Returns:
+        Message indicating success or failure
+    """
     try:
-        print("Server starting...", file=sys.stderr)
-        mcp.run()
+        command = {
+            "type": "handshake",
+            "message": "Connection check"
+        }
+        response = send_to_unreal(command)
+        if response.get("success"):
+            return json.dumps({"status": "connected", "message": "Successfully connected to Unreal Engine"})
+        else:
+            return json.dumps({"status": "error", "message": f"Failed to connect: {response.get('error', 'Unknown error')}"})
     except Exception as e:
-        print(f"Server crashed with error: {e}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        raise
+        return json.dumps({"status": "error", "message": f"Connection error: {str(e)}"})
+
+# If this script is run directly, print some helpful information
+if __name__ == "__main__":
+    print(f"MCP Server for Unreal Engine started")
+    print(f"Connecting to Unreal Engine at {UNREAL_HOST}:{UNREAL_PORT}")
+    print(f"Using API Key: {API_KEY[:4]}...{API_KEY[-4:] if len(API_KEY) > 8 else ''}")
+    print("Run this script with Python and keep it running to handle MCP commands")
+    print("Configure environment variables to customize:")
+    print("  - UNREAL_HOST: Hostname of Unreal Engine (default: localhost)")
+    print("  - UNREAL_PORT: Port of Unreal Engine socket server (default: 9877)")
+    print("  - UNREAL_API_KEY: API key for authentication (default: your_default_api_key)")
+    
+    # Start the MCP server
+    mcp.start()
