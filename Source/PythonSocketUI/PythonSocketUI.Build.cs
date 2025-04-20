@@ -8,20 +8,20 @@ public class PythonSocketUI : ModuleRules
 	public PythonSocketUI(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
-		
+
 		PublicIncludePaths.AddRange(
 			new string[] {
 				// ... add public include paths required here ...
 			}
 		);
-				
+
 		PrivateIncludePaths.AddRange(
 			new string[] {
 				// ... add other private include paths required here ...
                 Path.Combine(EngineDirectory, "Plugins/Experimental/PythonScriptPlugin/Source/PythonScriptPlugin/Private"),
 			}
 		);
-			
+
 		PublicDependencyModuleNames.AddRange(
 			new string[] {
 				"Core",
@@ -32,10 +32,12 @@ public class PythonSocketUI : ModuleRules
                 "LevelEditor",
                 "Slate",
                 "SlateCore",
-                "EditorStyle"
+                "EditorStyle",
+                "Networking",
+                "Sockets"
 			}
 		);
-			
+
 		PrivateDependencyModuleNames.AddRange(
 			new string[] {
                 "Projects",
@@ -48,7 +50,7 @@ public class PythonSocketUI : ModuleRules
                 "ApplicationCore"
 			}
 		);
-		
+
 		if (Target.bBuildEditor == true)
         {
             // Detect and use Python if available
@@ -82,4 +84,4 @@ public class PythonSocketUI : ModuleRules
             PrivateDefinitions.Add("WITH_PYTHON=0");
         }
 	}
-} 
+}

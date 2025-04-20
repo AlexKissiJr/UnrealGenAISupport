@@ -44,7 +44,7 @@ class FPythonSocketConstants
 public:
     static FString PluginResourcesPath;
     static FString PluginContentPath;
-    
+
     static void InitializePathConstants()
     {
         // First try to find our plugin directly
@@ -53,21 +53,21 @@ public:
         {
             PluginResourcesPath = Plugin->GetBaseDir() / TEXT("Resources");
             PluginContentPath = Plugin->GetContentDir();
-            
+
             UE_LOG(LogPythonSocket, Display, TEXT("Plugin found directly: %s"), *Plugin->GetName());
             UE_LOG(LogPythonSocket, Display, TEXT("Resources path: %s"), *PluginResourcesPath);
             UE_LOG(LogPythonSocket, Display, TEXT("Content path: %s"), *PluginContentPath);
             return;
         }
-        
+
         // If not found, try to find it by iterating through all plugins
         UE_LOG(LogPythonSocket, Warning, TEXT("Plugin not found directly, searching all plugins..."));
         for (TSharedRef<IPlugin> LoadedPlugin : IPluginManager::Get().GetDiscoveredPlugins())
         {
             UE_LOG(LogPythonSocket, Display, TEXT("Checking plugin: %s"), *LoadedPlugin.Get().GetName());
-            
+
             // Check if this is our plugin
-            if (LoadedPlugin.Get().GetName().Contains(TEXT("GenAI")) || 
+            if (LoadedPlugin.Get().GetName().Contains(TEXT("GenAI")) ||
                 LoadedPlugin.Get().GetName().Contains(TEXT("GenerativeAI")))
             {
                 UE_LOG(LogPythonSocket, Display, TEXT("Found plugin by partial name: %s"), *LoadedPlugin.Get().GetName());
@@ -75,24 +75,24 @@ public:
                 break;
             }
         }
-        
+
         // If found via the alternative method
         if (Plugin.IsValid())
         {
             PluginResourcesPath = Plugin->GetBaseDir() / TEXT("Resources");
             PluginContentPath = Plugin->GetContentDir();
-            
+
             UE_LOG(LogPythonSocket, Display, TEXT("Plugin found by iterating: %s"), *Plugin->GetName());
             UE_LOG(LogPythonSocket, Display, TEXT("Resources path: %s"), *PluginResourcesPath);
             UE_LOG(LogPythonSocket, Display, TEXT("Content path: %s"), *PluginContentPath);
             return;
         }
-        
+
         // Fallback to a hardcoded path if all else fails
         FString ProjectDir = FPaths::ProjectDir();
         PluginResourcesPath = FPaths::Combine(ProjectDir, TEXT("Plugins/UnrealGenAISupport/Resources"));
         PluginContentPath = FPaths::Combine(ProjectDir, TEXT("Plugins/UnrealGenAISupport/Content"));
-        
+
         UE_LOG(LogPythonSocket, Warning, TEXT("Could not find plugin! Using hardcoded fallback paths:"));
         UE_LOG(LogPythonSocket, Warning, TEXT("Resources path: %s"), *PluginResourcesPath);
         UE_LOG(LogPythonSocket, Warning, TEXT("Content path: %s"), *PluginContentPath);
@@ -116,7 +116,7 @@ public:
 
         // Register icon
         FSlateImageBrush* IconBrush = new FSlateImageBrush(
-            RootToContentDir(TEXT("Icon128.png")), 
+            RootToContentDir(TEXT("Icon128.png")),
             Icon16x16,
             FLinearColor::White,
             ESlateBrushTileType::NoTile
@@ -126,22 +126,24 @@ public:
         // Create status indicator brushes
         const FLinearColor RunningColor(0.0f, 0.8f, 0.0f);  // Green
         const FLinearColor StoppedColor(0.8f, 0.0f, 0.0f);  // Red
-        
+        const FLinearColor NotActiveColor(0.8f, 0.8f, 0.0f);  // Yellow
+
         Set("PythonSocket.StatusRunning", new FSlateRoundedBoxBrush(RunningColor, 3.0f, FVector2f(StatusSize)));
         Set("PythonSocket.StatusStopped", new FSlateRoundedBoxBrush(StoppedColor, 3.0f, FVector2f(StatusSize)));
+        Set("PythonSocket.StatusNotActive", new FSlateRoundedBoxBrush(NotActiveColor, 3.0f, FVector2f(StatusSize)));
 
         // Define a custom button style with hover feedback
         FButtonStyle ToolbarButtonStyle = FAppStyle::Get().GetWidgetStyle<FButtonStyle>("LevelEditor.ToolBar.Button");
-        
+
         // Normal state
         ToolbarButtonStyle.SetNormal(FSlateColorBrush(FLinearColor(0, 0, 0, 0))); // Transparent
-        
+
         // Hovered state
         ToolbarButtonStyle.SetHovered(FSlateColorBrush(FLinearColor(0.2f, 0.2f, 0.2f, 0.3f)));
-        
+
         // Pressed state
         ToolbarButtonStyle.SetPressed(FSlateColorBrush(FLinearColor(0.1f, 0.1f, 0.1f, 0.5f)));
-        
+
         // Register the custom style
         Set("PythonSocket.TransparentToolbarButton", ToolbarButtonStyle);
     }
@@ -177,17 +179,23 @@ TSharedPtr<FPythonSocketStyle> FPythonSocketStyle::Instance = nullptr;
 void FPythonSocketUIModule::StartupModule()
 {
     PYSOCKET_LOG_INFO("Python Socket UI Plugin is starting up");
-    
+
     // Initialize constants
     FPythonSocketConstants::InitializePathConstants();
-    
+
     // Initialize styling for the plugin
     FPythonSocketStyle::Initialize();
     FSlateStyleRegistry::RegisterSlateStyle(*FPythonSocketStyle::Get());
-    
+
     // Set initial state
     bIsSocketServerRunning = false;
-    
+    bIsSocketConnected = false;
+
+    // We'll start the connection checker only when the server is started
+    // StartConnectionChecker();
+
+    // Connection checking will be handled by the ConnectionChecker thread when started
+
     // Log whether Python is available
     if (IsPythonAvailable())
     {
@@ -197,24 +205,24 @@ void FPythonSocketUIModule::StartupModule()
     {
         PYSOCKET_LOG_WARNING("Python is NOT available for this module");
     }
-    
+
     // More debug logging
     PYSOCKET_LOG_INFO("Python Socket Style registered");
-    
+
     // Ensure tool menus are initiated
     if (!UToolMenus::IsToolMenuUIEnabled())
     {
         UToolMenus::Get()->RegisterMenu("LevelEditor.MainMenu", "MainFrame.MainMenu");
         PYSOCKET_LOG_INFO("Registered UToolMenus");
     }
-    
+
     // Try to extend toolbar immediately if possible
     if (UToolMenus::IsToolMenuUIEnabled() && FSlateApplication::IsInitialized())
     {
         PYSOCKET_LOG_INFO("Extending toolbar directly");
         ExtendLevelEditorToolbar();
     }
-    
+
     // Also register for post engine init as a fallback
     FCoreDelegates::OnPostEngineInit.RemoveAll(this);
     PYSOCKET_LOG_INFO("Registering OnPostEngineInit delegate");
@@ -224,19 +232,24 @@ void FPythonSocketUIModule::StartupModule()
 void FPythonSocketUIModule::ShutdownModule()
 {
     PYSOCKET_LOG_INFO("Python Socket UI Plugin is shutting down");
-    
+
+    // Stop the connection checker
+    StopConnectionChecker();
+
+    // Connection checking is handled by the ConnectionChecker thread
+
     // Unregister style set
     FPythonSocketStyle::Shutdown();
-    
+
     // Stop server if running
     if (bIsSocketServerRunning)
     {
         StopSocketServer();
     }
-    
+
     // Close control panel if open
     CloseControlPanel();
-    
+
     // Clean up delegates
     FCoreDelegates::OnPostEngineInit.RemoveAll(this);
 }
@@ -244,22 +257,22 @@ void FPythonSocketUIModule::ShutdownModule()
 void FPythonSocketUIModule::ExtendLevelEditorToolbar()
 {
     static bool bToolbarExtended = false;
-    
+
     if (bToolbarExtended)
     {
         PYSOCKET_LOG_WARNING("ExtendLevelEditorToolbar called but toolbar already extended, skipping");
         return;
     }
-    
+
     // Make sure UToolMenus is initialized
     if (!UToolMenus::IsToolMenuUIEnabled())
     {
         PYSOCKET_LOG_WARNING("UToolMenus not initialized yet, cannot extend toolbar");
         return;
     }
-    
+
     PYSOCKET_LOG_INFO("ExtendLevelEditorToolbar called - first time");
-    
+
     // Check if our style is registered
     if (!FPythonSocketStyle::Get().IsValid())
     {
@@ -267,16 +280,16 @@ void FPythonSocketUIModule::ExtendLevelEditorToolbar()
         FPythonSocketStyle::Initialize();
         FSlateStyleRegistry::RegisterSlateStyle(*FPythonSocketStyle::Get());
     }
-    
+
     // Ensure the main menu is registered
     UToolMenus::Get()->RegisterMenu("LevelEditor.MainMenu", "MainFrame.MainMenu");
-    
+
     // Add button to toolbar
     UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.User");
     if (ToolbarMenu)
     {
         FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("PythonSocket");
-        
+
         // Add a custom widget instead of a static toolbar button
         Section.AddEntry(FToolMenuEntry::InitWidget(
             "PythonSocketControl",
@@ -299,9 +312,12 @@ void FPythonSocketUIModule::ExtendLevelEditorToolbar()
                 [
                     SNew(SImage)
                     .Image_Lambda([this]() -> const FSlateBrush* {
-                        return bIsSocketServerRunning 
-                            ? FPythonSocketStyle::Get()->GetBrush("PythonSocket.StatusRunning") 
-                            : FPythonSocketStyle::Get()->GetBrush("PythonSocket.StatusStopped");
+                        if (!bIsSocketServerRunning)
+                            return FPythonSocketStyle::Get()->GetBrush("PythonSocket.StatusStopped");
+                        else if (!bIsSocketConnected)
+                            return FPythonSocketStyle::Get()->GetBrush("PythonSocket.StatusNotActive");
+                        else
+                            return FPythonSocketStyle::Get()->GetBrush("PythonSocket.StatusRunning");
                     })
                 ]
             ],
@@ -310,7 +326,7 @@ void FPythonSocketUIModule::ExtendLevelEditorToolbar()
             false,
             false
         ));
-        
+
         PYSOCKET_LOG_INFO("Python Socket button added to main toolbar with dynamic icon");
     }
     else
@@ -318,8 +334,8 @@ void FPythonSocketUIModule::ExtendLevelEditorToolbar()
         PYSOCKET_LOG_ERROR("Failed to extend LevelEditor toolbar - toolbar menu is null");
         return;
     }
-    
-    // Window menu 
+
+    // Window menu
     UToolMenu* WindowMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Window");
     if (WindowMenu)
     {
@@ -340,9 +356,9 @@ void FPythonSocketUIModule::ExtendLevelEditorToolbar()
     {
         PYSOCKET_LOG_ERROR("Failed to extend Window menu - menu is null");
     }
-    
+
     bToolbarExtended = true;
-    
+
     // Force refresh all tool menus to make sure our changes take effect
     UToolMenus::Get()->RefreshAllWidgets();
 }
@@ -409,14 +425,14 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
         .Padding(8.0f)
         [
             SNew(SVerticalBox)
-            
+
             // Status section
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 0, 0, 8)
             [
                 SNew(SHorizontalBox)
-                
+
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 .VAlign(VAlign_Center)
@@ -426,33 +442,39 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
                     .Text(LOCTEXT("ServerStatusLabel", "Socket Server Status:"))
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
-                
+
                 + SHorizontalBox::Slot()
                 .FillWidth(1.0f)
                 .VAlign(VAlign_Center)
                 [
                     SNew(STextBlock)
                     .Text_Lambda([this]() -> FText {
-                        return bIsSocketServerRunning 
-                            ? LOCTEXT("ServerRunningStatus", "Running") 
-                            : LOCTEXT("ServerStoppedStatus", "Stopped");
+                        if (!bIsSocketServerRunning)
+                            return LOCTEXT("ServerStoppedStatus", "Stopped");
+                        else if (!bIsSocketConnected)
+                            return LOCTEXT("ServerNotActiveStatus", "Not Active");
+                        else
+                            return LOCTEXT("ServerRunningStatus", "Running");
                     })
                     .ColorAndOpacity_Lambda([this]() -> FSlateColor {
-                        return bIsSocketServerRunning 
-                            ? FSlateColor(FLinearColor(0.0f, 0.8f, 0.0f)) 
-                            : FSlateColor(FLinearColor(0.8f, 0.0f, 0.0f));
+                        if (!bIsSocketServerRunning)
+                            return FSlateColor(FLinearColor(0.8f, 0.0f, 0.0f)); // Red
+                        else if (!bIsSocketConnected)
+                            return FSlateColor(FLinearColor(0.8f, 0.8f, 0.0f)); // Yellow
+                        else
+                            return FSlateColor(FLinearColor(0.0f, 0.8f, 0.0f)); // Green
                     })
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
             ]
-            
+
             // Port information
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 0, 0, 8)
             [
                 SNew(SHorizontalBox)
-                
+
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 .VAlign(VAlign_Center)
@@ -462,7 +484,7 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
                     .Text(LOCTEXT("ServerPortLabel", "Port:"))
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
-                
+
                 + SHorizontalBox::Slot()
                 .FillWidth(1.0f)
                 .VAlign(VAlign_Center)
@@ -472,7 +494,7 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
             ]
-            
+
             // Buttons
             + SVerticalBox::Slot()
             .AutoHeight()
@@ -482,7 +504,7 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
                 SNew(SUniformGridPanel)
                 .SlotPadding(FMargin(5.0f))
                 .MinDesiredSlotWidth(100.0f)
-                
+
                 // Start button
                 + SUniformGridPanel::Slot(0, 0)
                 [
@@ -493,7 +515,7 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
                     .IsEnabled_Lambda([this]() -> bool { return !bIsSocketServerRunning; })
                     .OnClicked(FOnClicked::CreateRaw(this, &FPythonSocketUIModule::OnStartServerClicked))
                 ]
-                
+
                 // Stop button
                 + SUniformGridPanel::Slot(1, 0)
                 [
@@ -503,6 +525,17 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
                     .Text(LOCTEXT("StopServerButton", "Stop Server"))
                     .IsEnabled_Lambda([this]() -> bool { return bIsSocketServerRunning; })
                     .OnClicked(FOnClicked::CreateRaw(this, &FPythonSocketUIModule::OnStopServerClicked))
+                ]
+
+                // Test Connection button
+                + SUniformGridPanel::Slot(2, 0)
+                [
+                    SNew(SButton)
+                    .HAlign(HAlign_Center)
+                    .VAlign(VAlign_Center)
+                    .Text(LOCTEXT("TestConnectionButton", "Test Connection"))
+                    .IsEnabled_Lambda([this]() -> bool { return bIsSocketServerRunning; })
+                    .OnClicked(FOnClicked::CreateRaw(this, &FPythonSocketUIModule::OnTestConnectionClicked))
                 ]
             ]
         ];
@@ -520,10 +553,500 @@ FReply FPythonSocketUIModule::OnStopServerClicked()
     return FReply::Handled();
 }
 
+FReply FPythonSocketUIModule::OnTestConnectionClicked()
+{
+    bool bConnected = TestSocketConnection();
+    UpdateConnectionStatus(bConnected);
+
+    // Refresh the UI
+    if (UToolMenus* ToolMenus = UToolMenus::Get())
+    {
+        ToolMenus->RefreshAllWidgets();
+    }
+
+    return FReply::Handled();
+}
+
+void FPythonSocketUIModule::UpdateConnectionStatus(bool bConnected)
+{
+    // Only log if the status has changed
+    static bool bLastConnectionStatus = false;
+    bool bStatusChanged = (bConnected != bIsSocketConnected);
+
+    bIsSocketConnected = bConnected;
+
+    // Log the status change only if it changed
+    if (bStatusChanged)
+    {
+        if (bConnected)
+        {
+            PYSOCKET_LOG_INFO("Socket server connection is active");
+        }
+        else
+        {
+            PYSOCKET_LOG_WARNING("Socket server connection is not active");
+        }
+    }
+
+    // Refresh the UI
+    if (UToolMenus* ToolMenus = UToolMenus::Get())
+    {
+        ToolMenus->RefreshAllWidgets();
+    }
+
+    // Force refresh the control panel if it's open
+    if (ControlPanelWindow.IsValid())
+    {
+        ControlPanelWindow->GetContent()->Invalidate(EInvalidateWidgetReason::Layout);
+    }
+}
+
+bool FPythonSocketUIModule::TestSocketConnection()
+{
+    // Create a socket
+    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+    if (!SocketSubsystem)
+    {
+        PYSOCKET_LOG_ERROR("Failed to get socket subsystem");
+        return false;
+    }
+
+    // Create a TCP socket
+    FSocket* Socket = SocketSubsystem->CreateSocket(NAME_Stream, TEXT("SocketConnectionTest"), false);
+    if (!Socket)
+    {
+        PYSOCKET_LOG_ERROR("Failed to create socket");
+        return false;
+    }
+
+    // Set the socket to non-blocking mode
+    Socket->SetNonBlocking(true);
+
+    // Connect to the socket server
+    FIPv4Address Address;
+    FIPv4Address::Parse(TEXT("127.0.0.1"), Address);
+    TSharedRef<FInternetAddr> Addr = SocketSubsystem->CreateInternetAddr();
+    Addr->SetIp(Address.Value);
+    Addr->SetPort(9877); // Hardcoded port from unreal_socket_server.py
+
+    bool bConnected = Socket->Connect(*Addr);
+    if (!bConnected)
+    {
+        ESocketErrors LastError = SocketSubsystem->GetLastErrorCode();
+        if (LastError == SE_EWOULDBLOCK)
+        {
+            // This is expected for non-blocking sockets
+            // Wait a short time to see if the connection completes
+            FDateTime StartTime = FDateTime::Now();
+            while ((FDateTime::Now() - StartTime).GetTotalSeconds() < 2.0f)
+            {
+                FPlatformProcess::Sleep(0.1f);
+
+                // Check if the socket is connected
+                if (Socket->GetConnectionState() == SCS_Connected)
+                {
+                    bConnected = true;
+                    break;
+                }
+            }
+        }
+        else if (LastError == SE_ECONNREFUSED)
+        {
+            // Connection refused means the server is not running
+            PYSOCKET_LOG_ERROR("Connection refused: Socket server is not running");
+            SocketSubsystem->DestroySocket(Socket);
+            return false;
+        }
+        else
+        {
+            PYSOCKET_LOG_ERROR("Failed to connect to socket server: %s", SocketSubsystem->GetSocketError(LastError));
+        }
+    }
+
+    // If connected, try to send a simple message to verify the connection
+    if (bConnected)
+    {
+        // We're using heartbeat messages for connection checks, so no need to log this
+        // PYSOCKET_LOG_INFO("Socket connected, sending test message");
+
+        // Send a heartbeat message with proper API key
+        FString ApiKey = TEXT("your_default_api_key");
+        FString Message = FString::Printf(TEXT("{\"id\":\"heartbeat_%d\",\"type\":\"heartbeat\",\"message\":\"Connection check\",\"client_id\":\"127.0.0.1:heartbeat\",\"api_key\":\"%s\"}"), FMath::RandRange(10000, 99999), *ApiKey);
+
+        // Convert to UTF-8 and ensure proper termination
+        FTCHARToUTF8 Converter(*Message);
+        int32 MessageSize = Converter.Length();
+        int32 BytesSent = 0;
+
+        // Send the message
+        bConnected = Socket->Send((uint8*)Converter.Get(), MessageSize, BytesSent);
+
+        if (!bConnected)
+        {
+            PYSOCKET_LOG_ERROR("Failed to send test message");
+        }
+        else
+        {
+            PYSOCKET_LOG_INFO("Test message sent, waiting for response");
+
+            // Wait for a response
+            FDateTime StartTime = FDateTime::Now();
+            bool bGotResponse = false;
+
+            // Buffer for receiving data
+            uint8 RecvBuffer[4096];
+            int32 BytesRead = 0;
+
+            while ((FDateTime::Now() - StartTime).GetTotalSeconds() < 1.0f && !bGotResponse)
+            {
+                FPlatformProcess::Sleep(0.1f);
+
+                // Check if there's data to read
+                uint32 PendingDataSize = 0;
+                if (Socket->HasPendingData(PendingDataSize) && PendingDataSize > 0)
+                {
+                    // Read the response
+                    if (Socket->Recv(RecvBuffer, sizeof(RecvBuffer) - 1, BytesRead))
+                    {
+                        if (BytesRead > 0)
+                        {
+                            // Null-terminate the buffer
+                            RecvBuffer[BytesRead] = 0;
+
+                            // Convert to FString
+                            FString Response = UTF8_TO_TCHAR(RecvBuffer);
+                            PYSOCKET_LOG_INFO("Received response: %s", *Response);
+
+                            // Check if it's a valid response
+                            if (Response.Contains(TEXT("success")) && !Response.Contains(TEXT("false")))
+                            {
+                                bGotResponse = true;
+                                PYSOCKET_LOG_INFO("Valid response received from socket server");
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!bGotResponse)
+            {
+                PYSOCKET_LOG_ERROR("No valid response received from socket server");
+            }
+
+            bConnected = bGotResponse;
+        }
+    }
+
+    // Clean up
+    SocketSubsystem->DestroySocket(Socket);
+
+    // The socket server is designed to accept connections, process commands, and then close the connection
+    // So if we were able to connect, send a message, and get a response, the server is running correctly
+    return bConnected;
+}
+
+void FPythonSocketUIModule::StartConnectionChecker()
+{
+    // Create the connection checker if it doesn't exist
+    if (!ConnectionChecker.IsValid())
+    {
+        // Check every 10 seconds to reduce log spam
+        ConnectionChecker = MakeShareable(new FSocketConnectionChecker(this, 10.0f));
+        ConnectionChecker->StartThread();
+        PYSOCKET_LOG_INFO("Socket connection checker started");
+    }
+}
+
+void FPythonSocketUIModule::StopConnectionChecker()
+{
+    // Stop the connection checker if it exists
+    if (ConnectionChecker.IsValid())
+    {
+        ConnectionChecker->StopThread();
+        ConnectionChecker.Reset();
+        PYSOCKET_LOG_INFO("Socket connection checker stopped");
+    }
+}
+
+void FPythonSocketUIModule::AutoRestartSocketServer()
+{
+    PYSOCKET_LOG_WARNING("Auto-restarting socket server due to connection issues");
+
+    // Only attempt to restart if the server is marked as running
+    if (bIsSocketServerRunning)
+    {
+        // First, stop the server
+        StopSocketServer();
+
+        // Wait a moment to ensure everything is cleaned up
+        FPlatformProcess::Sleep(2.0f);
+
+        // Then start it again
+        StartSocketServer();
+
+        PYSOCKET_LOG_WARNING("Socket server auto-restart completed");
+    }
+    else
+    {
+        PYSOCKET_LOG_WARNING("Socket server is not marked as running, skipping auto-restart");
+    }
+}
+
+// Implementation of FSocketConnectionChecker
+
+FSocketConnectionChecker::FSocketConnectionChecker(FPythonSocketUIModule* InOwner, float InCheckInterval)
+    : Owner(InOwner)
+    , CheckInterval(InCheckInterval)
+    , bRunning(false)
+    , Thread(nullptr)
+    , FailedConnectionCount(0)
+    , MaxFailedConnections(3) // Number of consecutive failures before auto-restart
+{
+}
+
+FSocketConnectionChecker::~FSocketConnectionChecker()
+{
+    Stop();
+    if (Thread)
+    {
+        Thread->Kill(true);
+        delete Thread;
+        Thread = nullptr;
+    }
+}
+
+bool FSocketConnectionChecker::Init()
+{
+    return true;
+}
+
+uint32 FSocketConnectionChecker::Run()
+{
+    while (bRunning)
+    {
+        // Test the connection
+        bool bConnected = TestConnection();
+
+        // Update the connection status on the game thread
+        AsyncTask(ENamedThreads::GameThread, [this, bConnected]()
+        {
+            if (Owner)
+            {
+                Owner->UpdateConnectionStatus(bConnected);
+
+                // Only log connection status changes to reduce spam
+                static bool bLastConnectionStatus = false;
+                if (bConnected != bLastConnectionStatus)
+                {
+                    if (bConnected)
+                    {
+                        // Only log when the connection is first established
+                        if (!bLastConnectionStatus)
+                        {
+                            UE_LOG(LogPythonSocket, Display, TEXT("Socket connection check: Connected"));
+                        }
+                        FailedConnectionCount = 0; // Reset the counter when connection is successful
+                    }
+                    else
+                    {
+                        UE_LOG(LogPythonSocket, Warning, TEXT("Socket connection check: Not connected"));
+                    }
+                    bLastConnectionStatus = bConnected;
+                }
+
+                // Increment failed connection count if not connected
+                if (!bConnected)
+                {
+                    FailedConnectionCount++;
+
+                    // If we've had too many consecutive failures and the server is marked as running, try to restart the server
+                    if (FailedConnectionCount >= MaxFailedConnections && Owner->IsSocketServerRunning())
+                    {
+                        UE_LOG(LogPythonSocket, Warning, TEXT("Socket connection check: %d consecutive failures. Attempting auto-restart..."), FailedConnectionCount);
+                        Owner->AutoRestartSocketServer();
+                        FailedConnectionCount = 0; // Reset the counter after restart attempt
+                    }
+                }
+            }
+        });
+
+        // Sleep for the check interval
+        FPlatformProcess::Sleep(CheckInterval);
+    }
+
+    return 0;
+}
+
+void FSocketConnectionChecker::Stop()
+{
+    bRunning = false;
+}
+
+void FSocketConnectionChecker::Exit()
+{
+    bRunning = false;
+}
+
+void FSocketConnectionChecker::StartThread()
+{
+    if (!Thread && !bRunning)
+    {
+        bRunning = true;
+        Thread = FRunnableThread::Create(this, TEXT("SocketConnectionChecker"), 0, TPri_Normal);
+    }
+}
+
+void FSocketConnectionChecker::StopThread()
+{
+    Stop();
+    if (Thread)
+    {
+        Thread->WaitForCompletion();
+        delete Thread;
+        Thread = nullptr;
+    }
+}
+
+bool FSocketConnectionChecker::TestConnection()
+{
+    // Create a socket
+    ISocketSubsystem* SocketSubsystem = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+    if (!SocketSubsystem)
+    {
+        return false;
+    }
+
+    // Create a TCP socket
+    FSocket* Socket = SocketSubsystem->CreateSocket(NAME_Stream, TEXT("SocketConnectionTest"), false);
+    if (!Socket)
+    {
+        return false;
+    }
+
+    // Set the socket to non-blocking mode
+    Socket->SetNonBlocking(true);
+
+    // Connect to the socket server
+    FIPv4Address Address;
+    FIPv4Address::Parse(TEXT("127.0.0.1"), Address);
+    TSharedRef<FInternetAddr> Addr = SocketSubsystem->CreateInternetAddr();
+    Addr->SetIp(Address.Value);
+    Addr->SetPort(9877); // Hardcoded port from unreal_socket_server.py
+
+    bool bConnected = Socket->Connect(*Addr);
+    if (!bConnected)
+    {
+        ESocketErrors LastError = SocketSubsystem->GetLastErrorCode();
+        if (LastError == SE_EWOULDBLOCK)
+        {
+            // This is expected for non-blocking sockets
+            // Wait a short time to see if the connection completes
+            FDateTime StartTime = FDateTime::Now();
+            while ((FDateTime::Now() - StartTime).GetTotalSeconds() < 1.0f)
+            {
+                FPlatformProcess::Sleep(0.1f);
+
+                // Check if the socket is connected
+                if (Socket->GetConnectionState() == SCS_Connected)
+                {
+                    bConnected = true;
+                    break;
+                }
+            }
+        }
+        else if (LastError == SE_ECONNREFUSED)
+        {
+            // Connection refused means the server is not running
+            SocketSubsystem->DestroySocket(Socket);
+            return false;
+        }
+    }
+
+    // If connected, try to send a simple message to verify the connection
+    if (bConnected)
+    {
+        // Send a heartbeat message with proper API key
+        FString ApiKey = TEXT("your_default_api_key");
+        FString Message = FString::Printf(TEXT("{\"id\":\"heartbeat_%d\",\"type\":\"heartbeat\",\"message\":\"Connection check\",\"client_id\":\"127.0.0.1:heartbeat\",\"api_key\":\"%s\"}"), FMath::RandRange(10000, 99999), *ApiKey);
+
+        // Convert to UTF-8 and ensure proper termination
+        FTCHARToUTF8 Converter(*Message);
+        int32 MessageSize = Converter.Length();
+        int32 BytesSent = 0;
+
+        // Send the message
+        bConnected = Socket->Send((uint8*)Converter.Get(), MessageSize, BytesSent);
+
+        // Wait for a response
+        if (bConnected)
+        {
+            FDateTime StartTime = FDateTime::Now();
+            bool bGotResponse = false;
+
+            // Buffer for receiving data
+            uint8 RecvBuffer[4096];
+            int32 BytesRead = 0;
+
+            while ((FDateTime::Now() - StartTime).GetTotalSeconds() < 1.0f && !bGotResponse)
+            {
+                FPlatformProcess::Sleep(0.1f);
+
+                // Check if there's data to read
+                uint32 PendingDataSize = 0;
+                if (Socket->HasPendingData(PendingDataSize) && PendingDataSize > 0)
+                {
+                    // Read the response
+                    if (Socket->Recv(RecvBuffer, sizeof(RecvBuffer) - 1, BytesRead))
+                    {
+                        if (BytesRead > 0)
+                        {
+                            // Null-terminate the buffer
+                            RecvBuffer[BytesRead] = 0;
+
+                            // Convert to FString
+                            FString Response = UTF8_TO_TCHAR(RecvBuffer);
+
+                            // Only log the response for debugging if it's not a heartbeat response
+                            if (!Response.Contains(TEXT("heartbeat")))
+                            {
+                                UE_LOG(LogPythonSocket, Display, TEXT("Received response: %s"), *Response);
+                            }
+
+                            // Check if it's a valid response
+                            if (Response.Contains(TEXT("success")) && !Response.Contains(TEXT("success\":false")))
+                            {
+                                bGotResponse = true;
+                                // Only log success for non-heartbeat responses
+                                if (!Response.Contains(TEXT("heartbeat")))
+                                {
+                                    UE_LOG(LogPythonSocket, Display, TEXT("Socket connection test successful"));
+                                }
+                            }
+                            else
+                            {
+                                UE_LOG(LogPythonSocket, Error, TEXT("Socket connection test failed: %s"), *Response);
+                            }
+                        }
+                    }
+                }
+            }
+
+            bConnected = bGotResponse;
+        }
+    }
+
+    // Clean up
+    SocketSubsystem->DestroySocket(Socket);
+
+    // The socket server is designed to accept connections, process commands, and then close the connection
+    // So if we were able to connect, send a message, and get a response, the server is running correctly
+    return bConnected;
+}
+
 void FPythonSocketUIModule::ToggleSocketServer()
 {
     PYSOCKET_LOG_WARNING("ToggleSocketServer called - Server state: %s", bIsSocketServerRunning ? TEXT("Running") : TEXT("Not Running"));
-    
+
     if (bIsSocketServerRunning)
     {
         PYSOCKET_LOG_WARNING("Stopping socket server...");
@@ -534,7 +1057,7 @@ void FPythonSocketUIModule::ToggleSocketServer()
         PYSOCKET_LOG_WARNING("Starting socket server...");
         StartSocketServer();
     }
-    
+
     PYSOCKET_LOG_WARNING("ToggleSocketServer completed - Server state: %s", bIsSocketServerRunning ? TEXT("Running") : TEXT("Not Running"));
 }
 
@@ -547,21 +1070,21 @@ void FPythonSocketUIModule::StartSocketServer()
     }
 
     PYSOCKET_LOG_INFO("Starting Python socket server");
-    
+
     IPythonScriptPlugin* PythonPlugin = IPythonScriptPlugin::Get();
-    
+
     if (!PythonPlugin)
     {
         PYSOCKET_LOG_ERROR("Python plugin not available");
         FText ErrorTitle = LOCTEXT("StartServerErrorTitle", "Socket Server Error");
         FMessageDialog::Open(
-            EAppMsgType::Ok, 
+            EAppMsgType::Ok,
             LOCTEXT("PythonPluginMissingError", "Python plugin is not available. Make sure Python Script Plugin is enabled."),
             ErrorTitle
         );
         return;
     }
-    
+
     // Use Python script plugin to start the socket server
     FString PythonCommand = TEXT("import unreal\n"
                                 "import sys\n"
@@ -570,17 +1093,19 @@ void FPythonSocketUIModule::StartSocketServer()
                                 "import os\n"
                                 "\n"
                                 "# Get the Content/Python path from plugin\n");
-    
+
     PythonCommand += TEXT("plugin_content_path = r\"");
     PythonCommand += FPythonSocketConstants::PluginContentPath;
     PythonCommand += TEXT("\"\n");
-    
+
     PythonCommand += TEXT("python_path = os.path.join(plugin_content_path, \"Python\")\n"
                          "sys.path.append(python_path)\n"
                          "\n"
                          "try:\n"
                          "    import unreal_socket_server\n"
                          "    reload(unreal_socket_server)\n"
+                         "    # Explicitly initialize the server\n"
+                         "    unreal_socket_server.initialize_server()\n"
                          "    print(\"Python socket server started successfully\")\n"
                          "    success = True\n"
                          "except Exception as e:\n"
@@ -590,33 +1115,47 @@ void FPythonSocketUIModule::StartSocketServer()
                          "success");
 
     bool bSuccess = false;
-    
+
     FPythonCommandEx PythonCommandEx;
     PythonCommandEx.Command = PythonCommand;
     if (PythonPlugin->ExecPythonCommandEx(PythonCommandEx))
     {
         // Get the result from the CommandResult field
         FString Result = PythonCommandEx.CommandResult;
-        
+
         // Log the complete result for debugging
         PYSOCKET_LOG_INFO("Python command result: %s", *Result);
-        
+
         // Check multiple indications of success - the server might output multiple messages
-        if (Result.Contains(TEXT("Socket server listening")) || 
-            Result.Contains(TEXT("Socket server started")) || 
+        if (Result.Contains(TEXT("Socket server listening")) ||
+            Result.Contains(TEXT("Socket server started")) ||
             Result.Contains(TEXT("Python socket server started successfully")) ||
             !Result.Contains(TEXT("Error")))  // If no error message is present, consider it successful
         {
             PYSOCKET_LOG_INFO("Python socket server started successfully");
             bIsSocketServerRunning = true;
             bSuccess = true;
+
+            // Start the connection checker now that the server is running
+            StartConnectionChecker();
+
+            // Test the connection
+            bool bConnected = TestSocketConnection();
+            UpdateConnectionStatus(bConnected);
         }
-        else if (Result.Contains(TEXT("True"))) 
+        else if (Result.Contains(TEXT("True")))
         {
             // Fallback to the original check
             PYSOCKET_LOG_INFO("Python socket server started successfully (detected via True)");
             bIsSocketServerRunning = true;
             bSuccess = true;
+
+            // Start the connection checker now that the server is running
+            StartConnectionChecker();
+
+            // Test the connection
+            bool bConnected = TestSocketConnection();
+            UpdateConnectionStatus(bConnected);
         }
         else if (Result.IsEmpty())
         {
@@ -624,6 +1163,13 @@ void FPythonSocketUIModule::StartSocketServer()
             PYSOCKET_LOG_INFO("Python socket server potentially started (empty result)");
             bIsSocketServerRunning = true;
             bSuccess = true;
+
+            // Start the connection checker now that the server is running
+            StartConnectionChecker();
+
+            // Test the connection
+            bool bConnected = TestSocketConnection();
+            UpdateConnectionStatus(bConnected);
         }
         else
         {
@@ -634,19 +1180,19 @@ void FPythonSocketUIModule::StartSocketServer()
     {
         PYSOCKET_LOG_ERROR("Failed to execute Python command");
     }
-    
+
     // Refresh the toolbar to update the status indicator
     if (UToolMenus* ToolMenus = UToolMenus::Get())
     {
         ToolMenus->RefreshAllWidgets();
     }
-    
+
     if (!bSuccess)
     {
         // Show an error message
         FText ErrorTitle = LOCTEXT("StartServerErrorTitle", "Socket Server Error");
         FMessageDialog::Open(
-            EAppMsgType::Ok, 
+            EAppMsgType::Ok,
             LOCTEXT("StartServerErrorMessage", "Failed to start Python socket server. Check Output Log for details."),
             ErrorTitle
         );
@@ -691,9 +1237,9 @@ void FPythonSocketUIModule::StopSocketServer()
 
 	// Check if the result contains success indicators
 	bool bServerStopped = false;
-	
+
 	// Check for explicit success messages
-	if (Result.Contains(TEXT("Python socket server module removed")) || 
+	if (Result.Contains(TEXT("Python socket server module removed")) ||
 	    Result.Contains(TEXT("Python socket server stopped")))
 	{
 		bServerStopped = true;
@@ -718,6 +1264,7 @@ void FPythonSocketUIModule::StopSocketServer()
 	{
 		PYSOCKET_LOG_INFO("Python socket server stopped successfully.");
 		bIsSocketServerRunning = false;
+		bIsSocketConnected = false;
 	}
 	else
 	{
@@ -725,7 +1272,11 @@ void FPythonSocketUIModule::StopSocketServer()
 		// Even if there was an error, we'll assume the server is no longer running
 		// This helps recover from inconsistent states
 		bIsSocketServerRunning = false;
+		bIsSocketConnected = false;
 	}
+
+	// Stop the connection checker since the server is no longer running
+	StopConnectionChecker();
 
 	// Refresh the toolbar to update the status
 	if (UToolMenus* ToolMenus = UToolMenus::Get())
@@ -743,21 +1294,21 @@ bool FPythonSocketUIModule::IsPythonAvailable() const
         PYSOCKET_LOG_ERROR("Python script plugin is not available");
         return false;
     }
-    
+
     // Check if we can run a simple Python command
     FPythonCommandEx PythonCommandEx;
     PythonCommandEx.Command = TEXT("print('Python is available')");
     bool bSuccess = PythonPlugin->ExecPythonCommandEx(PythonCommandEx);
-    
+
     if (!bSuccess)
     {
         PYSOCKET_LOG_ERROR("Python script plugin is available but failed to execute a simple Python command");
         return false;
     }
-    
+
     // Get the result from the CommandResult field
     FString Result = PythonCommandEx.CommandResult;
-    
+
     PYSOCKET_LOG_INFO("Python test result: %s", *Result);
     return true;
 }
@@ -768,7 +1319,7 @@ bool FPythonSocketUIModule::RunPythonCommand(const FString& Command, FString& Re
     {
         FPythonCommandEx PythonCommandEx;
         PythonCommandEx.Command = Command;
-        
+
         if (PythonPlugin->ExecPythonCommandEx(PythonCommandEx))
         {
             Result = PythonCommandEx.CommandResult;
@@ -778,4 +1329,4 @@ bool FPythonSocketUIModule::RunPythonCommand(const FString& Command, FString& Re
     return false;
 }
 
-#undef LOCTEXT_NAMESPACE 
+#undef LOCTEXT_NAMESPACE
