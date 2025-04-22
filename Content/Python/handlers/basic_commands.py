@@ -4,14 +4,13 @@ from typing import Dict, Any, List, Tuple
 from utils import unreal_conversions as uc
 from utils import logging as log
 
-
 def handle_spawn(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a spawn command
     
     Args:
         command: The command dictionary containing:
-            - actor_class: Actor class name or path
+            - actor_class: Actor class name/path or mesh path (e.g., "/Game/Blueprints/BP_Barrel" or "/Game/Meshes/SM_Barrel01.SM_Barrel01")
             - location: [X, Y, Z] coordinates (optional)
             - rotation: [Pitch, Yaw, Roll] in degrees (optional)
             - scale: [X, Y, Z] scale factors (optional)
@@ -28,21 +27,7 @@ def handle_spawn(command: Dict[str, Any]) -> Dict[str, Any]:
         scale = command.get("scale", (1, 1, 1))
         actor_label = command.get("actor_label")
 
-        log.log_command("spawn", f"Class: {actor_class_name}, Label: {actor_label}")
-
-        # Import the C++ utility class
-        gen_actor_utils = unreal.GenActorUtils
-
-        # First handle specific cases for basic shapes
-        actor_class_lower = actor_class_name.lower()
-
-        # Map to properly capitalized names for finding assets
-        shape_map = {
-            "cube": "Cube",
-            "sphere": "Sphere",
-            "cylinder": "Cylinder",
-            "cone": "Cone"
-        }
+        unreal.log(f"Spawn command: Class: {actor_class_name}, Label: {actor_label}")
 
         # Convert parameters to Unreal types
         loc = uc.to_unreal_vector(location)
@@ -50,32 +35,38 @@ def handle_spawn(command: Dict[str, Any]) -> Dict[str, Any]:
         scale_vector = uc.to_unreal_vector(scale)
 
         actor = None
+        gen_actor_utils = unreal.GenActorUtils
 
-        # Use the right C++ function based on the actor type
-        if actor_class_lower in shape_map:
-            proper_name = shape_map[actor_class_lower]
-            actor = gen_actor_utils.spawn_basic_shape(proper_name, loc, rot, scale_vector, actor_label or "")
+        # Check if it's a mesh path (e.g., "/Game/.../SM_Barrel01.SM_Barrel01")
+        if actor_class_name.startswith("/Game") and "." in actor_class_name:
+            # Try loading as a static mesh
+            mesh = unreal.load_object(None, actor_class_name)
+            if isinstance(mesh, unreal.StaticMesh):
+                actor = gen_actor_utils.spawn_static_mesh_actor(actor_class_name, loc, rot, scale_vector, actor_label or "")
+            else:
+                # Fallback to actor class if not a mesh
+                actor = gen_actor_utils.spawn_actor_from_class(actor_class_name, loc, rot, scale_vector, actor_label or "")
         else:
-            actor = gen_actor_utils.spawn_actor_from_class(actor_class_name, loc, rot, scale_vector, actor_label or "")
+            # Handle basic shapes or actor classes
+            shape_map = {"cube": "Cube", "sphere": "Sphere", "cylinder": "Cylinder", "cone": "Cone"}
+            actor_class_lower = actor_class_name.lower()
+            if actor_class_lower in shape_map:
+                proper_name = shape_map[actor_class_lower]
+                actor = gen_actor_utils.spawn_basic_shape(proper_name, loc, rot, scale_vector, actor_label or "")
+            else:
+                actor = gen_actor_utils.spawn_actor_from_class(actor_class_name, loc, rot, scale_vector, actor_label or "")
 
         if not actor:
-            log.log_error(f"Failed to spawn actor of type {actor_class_name}")
+            unreal.log_error(f"Failed to spawn actor of type {actor_class_name}")
             return {"success": False, "error": f"Failed to spawn actor of type {actor_class_name}"}
 
         actor_name = actor.get_actor_label()
-        log.log_result("spawn", True, f"Actor: {actor_name} at {loc}")
+        unreal.log(f"Spawned actor: {actor_name} at {loc}")
         return {"success": True, "actor_name": actor_name}
 
     except Exception as e:
-        log.log_error(f"Error spawning actor: {str(e)}", include_traceback=True)
-
-        # Add hint for Claude to understand what went wrong
-        error_msg = str(e)
-        if "not found" in error_msg:
-            hint = "\nHint: For basic shapes, use 'Cube', 'Sphere', 'Cylinder', or 'Cone'. For other actors, try using '/Script/Engine.PointLight' format."
-            error_msg += hint
-
-        return {"success": False, "error": error_msg}
+        unreal.log_error(f"Error spawning actor: {str(e)}")
+        return {"success": False, "error": str(e)}
 
 
 def handle_create_material(command: Dict[str, Any]) -> Dict[str, Any]:
@@ -113,4 +104,50 @@ def handle_create_material(command: Dict[str, Any]) -> Dict[str, Any]:
 
     except Exception as e:
         log.log_error(f"Error creating material: {str(e)}", include_traceback=True)
+        return {"success": False, "error": str(e)}
+
+
+def handle_get_all_scene_objects(command: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        level = unreal.EditorLevelLibrary.get_level(unreal.EditorLevelLibrary.get_editor_world())
+        actors = unreal.GameplayStatics.get_all_actors_of_class(level, unreal.Actor)
+        result = [
+            {"name": actor.get_name(), "class": actor.get_class().get_name(), "location": [actor.get_actor_location().x, actor.get_actor_location().y, actor.get_actor_location().z]}
+            for actor in actors
+        ]
+        return {"success": True, "actors": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_create_project_folder(command: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        folder_path = command.get("folder_path")
+        full_path = f"/Game/{folder_path}"
+        unreal.EditorAssetLibrary.make_directory(full_path)
+        return {"success": True, "message": f"Created folder at {full_path}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_get_files_in_folder(command: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        folder_path = f"/Game/{command.get('folder_path')}"
+        files = unreal.EditorAssetLibrary.list_assets(folder_path, recursive=False)
+        return {"success": True, "files": [str(f) for f in files]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def handle_add_input_binding(command: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        action_name = command.get("action_name")
+        key = command.get("key")
+        # Correctly access the InputSettings singleton
+        input_settings = unreal.InputSettings.get_input_settings()
+        # Create the input action mapping
+        action_mapping = unreal.InputActionKeyMapping(action_name=action_name, key=unreal.InputCoreTypes.get_key(key))
+        # Add the mapping to the input settings
+        input_settings.add_action_mapping(action_mapping)
+        # Save the changes to the config file
+        input_settings.save_config()
+        return {"success": True, "message": f"Added input binding {action_name} -> {key}"}
+    except Exception as e:
         return {"success": False, "error": str(e)}
