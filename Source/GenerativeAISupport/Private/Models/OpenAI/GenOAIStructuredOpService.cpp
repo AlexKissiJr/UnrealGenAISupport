@@ -1,4 +1,3 @@
-// Copyright Prajwal Shetty 2024. All rights Reserved. https://prajwalshetty.com/terms
 
 
 #include "Models/OpenAI/GenOAIStructuredOpService.h"

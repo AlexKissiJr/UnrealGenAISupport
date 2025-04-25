@@ -1,4 +1,4 @@
-// Copyright Prajwal Shetty 2024. All rights Reserved. https://prajwalshetty.com/terms
+// Copyright Alex Kissi Jr 2024. All rights Reserved. https://createlex.com/terms
 
 #pragma once
 
