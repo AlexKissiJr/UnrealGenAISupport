@@ -528,7 +528,7 @@ TSharedRef<SWidget> FPythonSocketUIModule::CreateControlPanelContent()
                 [
                     SNew(STextBlock)
                     .Text_Lambda([this]() -> FText {
-                        return bUseWebSocket ? FText::AsNumber(8081) : FText::AsNumber(9877);
+                        return FText::AsNumber(9877); // Fixed port for WebSocket server
                     })
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
@@ -666,7 +666,7 @@ bool FPythonSocketUIModule::TestSocketConnection()
     FIPv4Address::Parse(TEXT("127.0.0.1"), Address);
     TSharedRef<FInternetAddr> Addr = SocketSubsystem->CreateInternetAddr();
     Addr->SetIp(Address.Value);
-    Addr->SetPort(9877); // Hardcoded port from unreal_socket_server.py
+    Addr->SetPort(9877); // Fixed port for WebSocket server
 
     bool bConnected = Socket->Connect(*Addr);
     if (!bConnected)
@@ -970,7 +970,7 @@ bool FSocketConnectionChecker::TestConnection()
     FIPv4Address::Parse(TEXT("127.0.0.1"), Address);
     TSharedRef<FInternetAddr> Addr = SocketSubsystem->CreateInternetAddr();
     Addr->SetIp(Address.Value);
-    Addr->SetPort(9877); // Hardcoded port from unreal_socket_server.py
+    Addr->SetPort(9877); // Fixed port for WebSocket server
 
     bool bConnected = Socket->Connect(*Addr);
     if (!bConnected)
@@ -1159,10 +1159,10 @@ void FPythonSocketUIModule::StartSocketServer()
                          "            import websockets\n"
                          "            print(\"WebSockets module installed successfully\")\n"
                          "        \n"
-                         "        import unreal_websocket_server\n"
-                         "        reload(unreal_websocket_server)\n"
+                         "        import websocket_server\n"
+                         "        reload(websocket_server)\n"
                          "        # Explicitly initialize the WebSocket server\n"
-                         "        unreal_websocket_server.initialize_server()\n"
+                         "        websocket_server.initialize_server()\n"
                          "        print(\"Python WebSocket server started successfully\")\n"
                          "    else:\n"
                          "        # Use standard TCP socket server\n"
@@ -1281,10 +1281,10 @@ void FPythonSocketUIModule::StopSocketServer()
 		"success = False\n"
 		"try:\n"
 		"    # Check for WebSocket server\n"
-		"    if 'unreal_websocket_server' in sys.modules:\n"
-		"        unreal_websocket_server = sys.modules['unreal_websocket_server']\n"
-		"        unreal_websocket_server.stop_server()\n"
-		"        sys.modules.pop('unreal_websocket_server', None)\n"
+		"    if 'websocket_server' in sys.modules:\n"
+		"        websocket_server = sys.modules['websocket_server']\n"
+		"        websocket_server.stop_server()\n"
+		"        sys.modules.pop('websocket_server', None)\n"
 		"        print('Python WebSocket server module removed')\n"
 		"        print('Python WebSocket server stopped')\n"
 		"        success = True\n"
