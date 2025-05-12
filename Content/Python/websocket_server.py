@@ -59,11 +59,20 @@ def log_error(message, include_traceback=False):
 try:
     from handlers import basic_commands, actor_commands, blueprint_commands, python_commands
     from handlers import ui_commands
-    from utils import logging as external_log
-    # If external logging exists, use it instead
-    log_info = getattr(external_log, 'log_info', log_info)
-    log_warning = getattr(external_log, 'log_warning', log_warning)
-    log_error = getattr(external_log, 'log_error', log_error)
+
+    # Try to import external logging, but don't fail if it's not available
+    try:
+        from utils import logging as external_log
+        # Check if the external logging module has the required functions
+        if hasattr(external_log, 'log_info') and hasattr(external_log, 'log_warning') and hasattr(external_log, 'log_error'):
+            # Use the external logging functions
+            log_info = external_log.log_info
+            log_warning = external_log.log_warning
+            log_error = external_log.log_error
+    except (ImportError, AttributeError):
+        # Keep using our own logging functions
+        pass
+
     log_info("Successfully imported handler modules")
 except ImportError as e:
     log_warning(f"Could not import some handler modules: {str(e)}")
