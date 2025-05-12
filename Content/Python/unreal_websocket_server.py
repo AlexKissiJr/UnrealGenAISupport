@@ -137,10 +137,15 @@ def process_commands(delta_time=None):
 
 # WebSocket handler
 async def handle_websocket(websocket, path):
-    """Handle WebSocket connections"""
+    """Handle WebSocket connections
+
+    Args:
+        websocket: The WebSocket connection
+        path: The request path (required by websockets library)
+    """
     client_id = f"client-{id(websocket)}"
     connected_clients.add(websocket)
-    log.log_info(f"WebSocket client connected: {client_id}")
+    log.log_info(f"WebSocket client connected: {client_id} (path: {path})")
 
     try:
         async for message in websocket:
@@ -215,8 +220,14 @@ async def start_websocket_server(host='localhost', port=8081):
         if available_port != port:
             log.log_warning(f"Port {port} is not available, using port {available_port} instead")
 
-        # Start the server
-        server_instance = await websockets.serve(handle_websocket, host, available_port)
+        # Create a server instance with the handler function
+        # The handler function must accept websocket and path parameters
+        server_instance = await websockets.serve(
+            ws_handler=handle_websocket,  # Explicitly name the parameter
+            host=host,
+            port=available_port
+        )
+
         log.log_info(f"WebSocket server started on ws://{host}:{available_port}")
 
         # Return the server instance and port
@@ -292,7 +303,20 @@ def stop_server():
         try:
             # Close the server
             if server_instance is not None:
-                asyncio.run_coroutine_threadsafe(server_instance.close(), server_loop)
+                # Create a coroutine to close the server
+                async def close_server():
+                    server_instance.close()
+                    await server_instance.wait_closed()
+
+                # Run the coroutine in the server's event loop
+                future = asyncio.run_coroutine_threadsafe(close_server(), server_loop)
+
+                # Wait for the coroutine to complete with a timeout
+                try:
+                    future.result(timeout=2.0)
+                except Exception as e:
+                    log.log_warning(f"Error waiting for server to close: {str(e)}")
+
                 server_instance = None
 
             # Stop the event loop
