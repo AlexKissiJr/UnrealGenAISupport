@@ -60,6 +60,16 @@ try:
     from handlers import basic_commands, actor_commands, blueprint_commands, python_commands
     from handlers import ui_commands
 
+    # Try to import our WebSocket-specific handlers
+    try:
+        from handlers import websocket_blueprint_handler
+        from handlers import websocket_actor_handler
+        has_websocket_handlers = True
+        log_info("Successfully imported WebSocket-specific handlers")
+    except ImportError as e:
+        has_websocket_handlers = False
+        log_warning(f"WebSocket-specific handlers not found: {str(e)}. Some functionality will be limited.")
+
     # Try to import external logging, but don't fail if it's not available
     try:
         from utils import logging as external_log
@@ -88,6 +98,7 @@ except ImportError as e:
     blueprint_commands = getattr(sys.modules, 'blueprint_commands', DummyModule())
     python_commands = getattr(sys.modules, 'python_commands', DummyModule())
     ui_commands = getattr(sys.modules, 'ui_commands', DummyModule())
+    has_websocket_handlers = False
 
 # Global queues and state with thread safety
 command_queue = queue.Queue()
@@ -276,8 +287,41 @@ async def handle_websocket(websocket, path):
                 command = json.loads(message)
                 log.log_info(f"WebSocket message received from {client_id}: {command}")
 
+                # Check for special command types that use our WebSocket-specific handlers
+                command_type = command.get("type", "")
+
+                # Handle blueprint operations with our specialized handler
+                if has_websocket_handlers and command_type == "blueprint_operation" and "operation" in command:
+                    try:
+                        # Use our specialized blueprint handler
+                        response_json = websocket_blueprint_handler.handle_blueprint_request(json.dumps(command))
+                        await websocket.send(response_json + '\n')
+                        continue
+                    except Exception as e:
+                        log.log_error(f"Error in blueprint handler: {str(e)}", include_traceback=True)
+                        await websocket.send(json.dumps({
+                            "success": False,
+                            "error": f"Error in blueprint handler: {str(e)}"
+                        }) + '\n')
+                        continue
+
+                # Handle actor operations with our specialized handler
+                elif has_websocket_handlers and command_type == "actor_operation" and "operation" in command:
+                    try:
+                        # Use our specialized actor handler
+                        response_json = websocket_actor_handler.handle_actor_request(json.dumps(command))
+                        await websocket.send(response_json + '\n')
+                        continue
+                    except Exception as e:
+                        log.log_error(f"Error in actor handler: {str(e)}", include_traceback=True)
+                        await websocket.send(json.dumps({
+                            "success": False,
+                            "error": f"Error in actor handler: {str(e)}"
+                        }) + '\n')
+                        continue
+
                 # For handshake, we can respond directly
-                if command.get("type") == "handshake":
+                if command_type == "handshake":
                     response = dispatcher.dispatch(command)
                     await websocket.send(json.dumps(response) + '\n')
                 else:
