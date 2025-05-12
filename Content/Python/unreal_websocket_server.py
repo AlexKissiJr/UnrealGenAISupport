@@ -132,14 +132,14 @@ async def handle_websocket(websocket, path):
     client_id = f"client-{id(websocket)}"
     connected_clients.add(websocket)
     log.log_info(f"WebSocket client connected: {client_id}")
-    
+
     try:
         async for message in websocket:
             try:
                 # Parse the JSON message
                 command = json.loads(message)
                 log.log_info(f"WebSocket message received from {client_id}: {command}")
-                
+
                 # For handshake, we can respond directly
                 if command.get("type") == "handshake":
                     response = dispatcher.dispatch(command)
@@ -148,13 +148,13 @@ async def handle_websocket(websocket, path):
                     # For other commands, queue them for main thread execution
                     command_id = f"{client_id}-{time.time()}"
                     command_queue.append((command_id, command, websocket))
-                    
+
                     # Wait for the response with a timeout
                     timeout = 10  # seconds
                     start_time = time.time()
                     while command_id not in response_dict and time.time() - start_time < timeout:
                         await asyncio.sleep(0.1)
-                    
+
                     # Send the response if available
                     if command_id in response_dict:
                         response, _ = response_dict.pop(command_id)
@@ -163,7 +163,7 @@ async def handle_websocket(websocket, path):
                         # Timeout occurred
                         error_response = {"success": False, "error": "Command processing timeout"}
                         await websocket.send(json.dumps(error_response))
-                        
+
             except json.JSONDecodeError as e:
                 log.log_error(f"Invalid JSON received: {str(e)}")
                 error_response = {"success": False, "error": f"Invalid JSON: {str(e)}"}
@@ -180,9 +180,24 @@ async def handle_websocket(websocket, path):
 # WebSocket server thread
 async def start_websocket_server(host='localhost', port=8081):
     """Start the WebSocket server"""
-    server = await websockets.serve(handle_websocket, host, port)
-    log.log_info(f"WebSocket server started on ws://{host}:{port}")
-    await server.wait_closed()
+    try:
+        # Try the default port first
+        try:
+            server = await websockets.serve(handle_websocket, host, port)
+            log.log_info(f"WebSocket server started on ws://{host}:{port}")
+            await server.wait_closed()
+        except OSError as e:
+            # If port is in use, try alternative ports
+            if e.errno == 10048:  # Port already in use
+                log.log_warning(f"Port {port} is already in use, trying alternative port")
+                alt_port = 8082
+                server = await websockets.serve(handle_websocket, host, alt_port)
+                log.log_info(f"WebSocket server started on ws://{host}:{alt_port}")
+                await server.wait_closed()
+            else:
+                raise
+    except Exception as e:
+        log.log_error(f"Failed to start WebSocket server: {str(e)}", include_traceback=True)
 
 # Thread function to run the WebSocket server
 def websocket_server_thread():
@@ -222,7 +237,12 @@ def stop_server():
     except Exception as e:
         log.log_error(f"Error unregistering WebSocket command processor: {str(e)}")
 
+    # Clear any pending commands and responses
+    command_queue.clear()
+    response_dict.clear()
+
     # Note: We can't directly stop the asyncio event loop from here
+    # But we can signal that we're stopping
     log.log_info("WebSocket server stopping")
     return True
 

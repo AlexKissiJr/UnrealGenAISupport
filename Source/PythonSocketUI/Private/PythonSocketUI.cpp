@@ -1140,6 +1140,10 @@ void FPythonSocketUIModule::StartSocketServer()
     // Add WebSocket flag
     PythonCommand += FString::Printf(TEXT("use_websocket = %s\n"), bUseWebSocket ? TEXT("True") : TEXT("False"));
 
+    // Add a delay to ensure any previous server instances are fully stopped
+    PythonCommand += TEXT("import time\n"
+                         "time.sleep(1.0)  # Wait for previous server to fully stop\n");
+
     PythonCommand += TEXT("python_path = os.path.join(plugin_content_path, \"Python\")\n"
                          "sys.path.append(python_path)\n"
                          "\n"
