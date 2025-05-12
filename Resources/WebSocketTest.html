@@ -98,7 +98,7 @@
             <label for="serverUrl">WebSocket Server URL:</label>
             <input type="text" id="serverUrl" value="ws://localhost:8081" />
             <div style="margin-top: 5px; font-size: 12px; color: #666;">
-                Note: If connection fails, try port 8082 instead (ws://localhost:8082)
+                Note: The client will automatically try ports 8081-8085 to find the server
             </div>
         </div>
 
@@ -138,8 +138,50 @@
         // WebSocket instance
         let socket = null;
 
+        // Try to connect to a WebSocket server on different ports
+        async function tryConnect(baseUrl, startPort, maxAttempts) {
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                const port = startPort + attempt;
+                const serverUrl = `${baseUrl}:${port}`;
+
+                logMessage(`Trying to connect to ${serverUrl}...`, 'info');
+
+                try {
+                    // Create a new WebSocket
+                    const ws = new WebSocket(serverUrl);
+
+                    // Return a promise that resolves when the connection is established
+                    // or rejects if there's an error
+                    return await new Promise((resolve, reject) => {
+                        // Set a timeout for the connection attempt
+                        const timeout = setTimeout(() => {
+                            ws.close();
+                            reject(new Error('Connection timeout'));
+                        }, 2000);
+
+                        ws.onopen = () => {
+                            clearTimeout(timeout);
+                            resolve(ws);
+                        };
+
+                        ws.onerror = () => {
+                            clearTimeout(timeout);
+                            ws.close();
+                            reject(new Error(`Failed to connect to ${serverUrl}`));
+                        };
+                    });
+                } catch (error) {
+                    logMessage(`Connection to ${serverUrl} failed: ${error.message}`, 'error');
+                    // Continue to the next port
+                }
+            }
+
+            // If we get here, all connection attempts failed
+            throw new Error(`Failed to connect after ${maxAttempts} attempts`);
+        }
+
         // Connect to WebSocket server
-        connectBtn.addEventListener('click', () => {
+        connectBtn.addEventListener('click', async () => {
             const serverUrl = serverUrlInput.value.trim();
 
             if (!serverUrl) {
@@ -147,9 +189,29 @@
                 return;
             }
 
+            // Parse the URL to get the base URL without port
+            let baseUrl, startPort;
             try {
-                socket = new WebSocket(serverUrl);
+                const url = new URL(serverUrl);
+                baseUrl = `${url.protocol}//${url.hostname}`;
+                startPort = url.port ? parseInt(url.port) : 8081;
+            } catch (error) {
+                logMessage('Invalid URL format', 'error');
+                return;
+            }
 
+            try {
+                // Disable the connect button during connection attempts
+                connectBtn.disabled = true;
+
+                // Try to connect to different ports
+                socket = await tryConnect(baseUrl, startPort, 5);
+
+                // Update the server URL input with the actual port
+                const actualPort = new URL(socket.url).port;
+                serverUrlInput.value = `${baseUrl}:${actualPort}`;
+
+                // Set up event handlers for the successful connection
                 socket.onopen = (event) => {
                     updateConnectionStatus(true);
                     logMessage('Connected to server', 'info');
@@ -169,8 +231,13 @@
                     logMessage(`Connection closed (Code: ${event.code})`, 'info');
                 };
 
+                // Connection successful
+                updateConnectionStatus(true);
+                logMessage(`Connected to ${socket.url}`, 'info');
+
             } catch (error) {
                 logMessage(`Failed to connect: ${error.message}`, 'error');
+                connectBtn.disabled = false;
             }
         });
 

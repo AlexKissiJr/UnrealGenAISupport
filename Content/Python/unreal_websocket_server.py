@@ -4,7 +4,10 @@ import websockets
 import json
 import threading
 import time
-from typing import Dict, Any, Optional
+import socket
+import sys
+import os
+from typing import Dict, Any, Optional, List, Set, Tuple
 
 # Import handlers from existing socket server
 from handlers import basic_commands, actor_commands, blueprint_commands, python_commands
@@ -15,6 +18,12 @@ from utils import logging as log
 command_queue = []
 response_dict = {}
 connected_clients = set()
+
+# Global server state
+server_instance = None
+server_task = None
+server_loop = None
+server_thread = None
 
 # Create a command dispatcher (reusing from socket server)
 class CommandDispatcher:
@@ -177,35 +186,64 @@ async def handle_websocket(websocket, path):
     finally:
         connected_clients.remove(websocket)
 
-# WebSocket server thread
+# Function to find an available port
+def find_available_port(start_port=8081, max_attempts=5):
+    """Find an available port starting from start_port"""
+    for port in range(start_port, start_port + max_attempts):
+        try:
+            # Try to create a socket and bind to the port
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind(('localhost', port))
+            sock.close()
+            return port
+        except OSError:
+            continue
+    return None
+
+# WebSocket server
 async def start_websocket_server(host='localhost', port=8081):
     """Start the WebSocket server"""
+    global server_instance
+
     try:
-        # Try the default port first
-        try:
-            server = await websockets.serve(handle_websocket, host, port)
-            log.log_info(f"WebSocket server started on ws://{host}:{port}")
-            await server.wait_closed()
-        except OSError as e:
-            # If port is in use, try alternative ports
-            if e.errno == 10048:  # Port already in use
-                log.log_warning(f"Port {port} is already in use, trying alternative port")
-                alt_port = 8082
-                server = await websockets.serve(handle_websocket, host, alt_port)
-                log.log_info(f"WebSocket server started on ws://{host}:{alt_port}")
-                await server.wait_closed()
-            else:
-                raise
+        # Find an available port
+        available_port = find_available_port(port)
+        if available_port is None:
+            log.log_error(f"Could not find an available port after trying {port} through {port+4}")
+            return None
+
+        if available_port != port:
+            log.log_warning(f"Port {port} is not available, using port {available_port} instead")
+
+        # Start the server
+        server_instance = await websockets.serve(handle_websocket, host, available_port)
+        log.log_info(f"WebSocket server started on ws://{host}:{available_port}")
+
+        # Return the server instance and port
+        return server_instance, available_port
     except Exception as e:
         log.log_error(f"Failed to start WebSocket server: {str(e)}", include_traceback=True)
+        return None
 
 # Thread function to run the WebSocket server
 def websocket_server_thread():
     """Run the WebSocket server in a separate thread"""
-    asyncio.set_event_loop(asyncio.new_event_loop())
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_websocket_server())
-    loop.run_forever()
+    global server_loop, server_task, server_instance
+
+    try:
+        # Create a new event loop for this thread
+        server_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(server_loop)
+
+        # Start the server
+        server_task = server_loop.create_task(start_websocket_server())
+
+        # Run the event loop
+        server_loop.run_forever()
+    except Exception as e:
+        log.log_error(f"Error in WebSocket server thread: {str(e)}", include_traceback=True)
+    finally:
+        log.log_info("WebSocket server thread exiting")
 
 # Register tick function to process commands on main thread
 def register_command_processor():
@@ -216,20 +254,28 @@ def register_command_processor():
 # Initialize the server
 def initialize_server():
     """Initialize and start the WebSocket server"""
+    global server_thread
+
+    # Make sure any previous server is stopped
+    stop_server()
+
     # Start the server thread
-    thread = threading.Thread(target=websocket_server_thread)
-    thread.daemon = True
-    thread.start()
+    server_thread = threading.Thread(target=websocket_server_thread, name="websocket_server_thread")
+    server_thread.daemon = True
+    server_thread.start()
     log.log_info("WebSocket server thread started")
 
     # Register the command processor on the main thread
     register_command_processor()
 
     log.log_info("Unreal Engine WebSocket AI command server initialized successfully")
+    return True
 
 # Function to stop the server
 def stop_server():
     """Stop the WebSocket server"""
+    global server_loop, server_task, server_instance, server_thread
+
     # Unregister the command processor
     try:
         unreal.unregister_slate_post_tick_callback(process_commands)
@@ -241,9 +287,32 @@ def stop_server():
     command_queue.clear()
     response_dict.clear()
 
-    # Note: We can't directly stop the asyncio event loop from here
-    # But we can signal that we're stopping
-    log.log_info("WebSocket server stopping")
+    # Stop the server
+    if server_loop is not None:
+        try:
+            # Close the server
+            if server_instance is not None:
+                asyncio.run_coroutine_threadsafe(server_instance.close(), server_loop)
+                server_instance = None
+
+            # Stop the event loop
+            server_loop.call_soon_threadsafe(server_loop.stop)
+            server_loop = None
+            server_task = None
+        except Exception as e:
+            log.log_error(f"Error stopping WebSocket server: {str(e)}")
+
+    # Wait for the thread to exit
+    if server_thread is not None and server_thread.is_alive():
+        try:
+            # Give the thread a short time to exit gracefully
+            server_thread.join(timeout=1.0)
+        except Exception as e:
+            log.log_error(f"Error joining WebSocket server thread: {str(e)}")
+        finally:
+            server_thread = None
+
+    log.log_info("WebSocket server stopped")
     return True
 
 # Auto-start is disabled - the server will be started explicitly when needed
