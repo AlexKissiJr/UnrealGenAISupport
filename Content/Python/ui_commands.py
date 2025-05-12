@@ -10,6 +10,13 @@ try:
 except ImportError:
     has_websocket_server = False
 
+# Try to import the standalone_websocket_server module
+try:
+    import standalone_websocket_server
+    has_standalone_server = True
+except ImportError:
+    has_standalone_server = False
+
 # Try to import the websocket_manager module
 try:
     import websocket_manager
@@ -21,8 +28,12 @@ def start_socket_server(use_websocket=False):
     """Start the Python socket server"""
     try:
         if use_websocket:
-            # Try to use the WebSocket manager first
-            if has_websocket_manager:
+            # Try to use the standalone WebSocket server first
+            if has_standalone_server:
+                unreal.log("Starting standalone WebSocket server...")
+                return standalone_websocket_server.initialize_server()
+            # Try to use the WebSocket manager if available
+            elif has_websocket_manager:
                 unreal.log("Starting WebSocket server using websocket_manager...")
                 return websocket_manager.start_server()
             # Fall back to the old WebSocket server if available
@@ -46,8 +57,12 @@ def stop_socket_server(use_websocket=False):
     """Stop the Python socket server"""
     try:
         if use_websocket:
-            # Try to use the WebSocket manager first
-            if has_websocket_manager:
+            # Try to use the standalone WebSocket server first
+            if has_standalone_server:
+                unreal.log("Stopping standalone WebSocket server...")
+                return standalone_websocket_server.stop_server()
+            # Try to use the WebSocket manager if available
+            elif has_websocket_manager:
                 unreal.log("Stopping WebSocket server using websocket_manager...")
                 return websocket_manager.stop_server()
             # Fall back to the old WebSocket server if available
@@ -71,8 +86,11 @@ def is_socket_server_running(use_websocket=False):
     """Check if the Python socket server is running"""
     try:
         if use_websocket:
-            # Try to use the WebSocket manager first
-            if has_websocket_manager:
+            # Try to use the standalone WebSocket server first
+            if has_standalone_server:
+                return hasattr(standalone_websocket_server, 'is_running') and standalone_websocket_server.is_running
+            # Try to use the WebSocket manager if available
+            elif has_websocket_manager:
                 return websocket_manager.is_server_running()
             # Fall back to the old WebSocket server if available
             elif has_websocket_server:
