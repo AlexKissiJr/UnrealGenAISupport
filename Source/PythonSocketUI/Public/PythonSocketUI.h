@@ -32,6 +32,12 @@ public:
 	/** Get whether socket server is running */
 	bool IsSocketServerRunning() const { return bIsSocketServerRunning; }
 
+	/** Get whether to use WebSocket instead of TCP */
+	bool UseWebSocket() const { return bUseWebSocket; }
+
+	/** Set whether to use WebSocket instead of TCP */
+	void SetUseWebSocket(bool bUseWS) { bUseWebSocket = bUseWS; }
+
 	/** Helper function to run Python commands and get results */
 	bool RunPythonCommand(const FString& Command, FString& Result);
 
@@ -72,6 +78,7 @@ private:
 	TSharedPtr<SWindow> ControlPanelWindow;
 	bool bIsSocketServerRunning;
 	bool bIsSocketConnected;
+	bool bUseWebSocket = true; // Default to using WebSocket
 	TSharedPtr<FSocketConnectionChecker> ConnectionChecker;
 };
 

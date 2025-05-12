@@ -2,6 +2,7 @@
 
 #include "GenerativeAIEditor.h"
 #include "TCPServer.h"
+#include "WebSocketServer.h"
 #include "LevelEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -33,7 +34,7 @@ class FGenAIConstants
 public:
     static FString PluginResourcesPath;
     static FString PluginLogsPath;
-    
+
     static void InitializePathConstants()
     {
         TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin("UnrealGenAISupport");
@@ -41,7 +42,7 @@ public:
         {
             PluginResourcesPath = Plugin->GetBaseDir() / TEXT("Resources");
             PluginLogsPath = Plugin->GetBaseDir() / TEXT("Logs");
-            
+
             // Create logs directory if it doesn't exist
             IPlatformFile& PlatformFile = FPlatformFileManager::Get().GetPlatformFile();
             if (!PlatformFile.DirectoryExists(*PluginLogsPath))
@@ -74,7 +75,7 @@ public:
 
         // Register icon - you'll need to create this icon
         FSlateImageBrush* IconBrush = new FSlateImageBrush(
-            RootToContentDir(TEXT("Icon128.png")), 
+            RootToContentDir(TEXT("Icon128.png")),
             Icon16x16,
             FLinearColor::White,
             ESlateBrushTileType::NoTile
@@ -84,22 +85,22 @@ public:
         // Create status indicator brushes
         const FLinearColor RunningColor(0.0f, 0.8f, 0.0f);  // Green
         const FLinearColor StoppedColor(0.8f, 0.0f, 0.0f);  // Red
-        
+
         Set("GenAIPlugin.StatusRunning", new FSlateRoundedBoxBrush(RunningColor, 3.0f, FVector2f(StatusSize)));
         Set("GenAIPlugin.StatusStopped", new FSlateRoundedBoxBrush(StoppedColor, 3.0f, FVector2f(StatusSize)));
 
         // Define a custom button style with hover feedback
         FButtonStyle ToolbarButtonStyle = FAppStyle::Get().GetWidgetStyle<FButtonStyle>("LevelEditor.ToolBar.Button");
-        
+
         // Normal state: fully transparent background
         ToolbarButtonStyle.SetNormal(FSlateColorBrush(FLinearColor(0, 0, 0, 0))); // Transparent
-        
+
         // Hovered state: subtle overlay
         ToolbarButtonStyle.SetHovered(FSlateColorBrush(FLinearColor(0.2f, 0.2f, 0.2f, 0.3f)));
-        
+
         // Pressed state: slightly darker overlay
         ToolbarButtonStyle.SetPressed(FSlateColorBrush(FLinearColor(0.1f, 0.1f, 0.1f, 0.5f)));
-        
+
         // Register the custom style
         Set("GenAIPlugin.TransparentToolbarButton", ToolbarButtonStyle);
     }
@@ -136,23 +137,23 @@ void FGenerativeAIEditorModule::StartupModule()
 {
     // Initialize path constants first
     FGenAIConstants::InitializePathConstants();
-    
+
     // Initialize our custom log category
     GENAI_LOG_INFO("GenerativeAI Editor Plugin is starting up");
-    
+
     // Register style set
     FGenAIPluginStyle::Initialize();
     FSlateStyleRegistry::RegisterSlateStyle(*FGenAIPluginStyle::Get());
-    
+
     // More debug logging
     GENAI_LOG_INFO("GenerativeAI Style registered");
 
     // Register settings if needed
     // TODO: Add settings registration if needed
-    
+
     // Register for post engine init to add toolbar button
     FCoreDelegates::OnPostEngineInit.RemoveAll(this);
-    
+
     GENAI_LOG_INFO("Registering OnPostEngineInit delegate");
     FCoreDelegates::OnPostEngineInit.AddRaw(this, &FGenerativeAIEditorModule::ExtendLevelEditorToolbar);
 }
@@ -163,16 +164,21 @@ void FGenerativeAIEditorModule::ShutdownModule()
     FGenAIPluginStyle::Shutdown();
 
     // Unregister settings if needed
-    
-    // Stop server if running
+
+    // Stop servers if running
     if (Server)
     {
         StopServer();
     }
-    
+
+    if (WebSocketServer)
+    {
+        StopWebSocketServer();
+    }
+
     // Close control panel if open
     CloseControlPanel();
-    
+
     // Clean up delegates
     FCoreDelegates::OnPostEngineInit.RemoveAll(this);
 }
@@ -180,22 +186,22 @@ void FGenerativeAIEditorModule::ShutdownModule()
 void FGenerativeAIEditorModule::ExtendLevelEditorToolbar()
 {
     static bool bToolbarExtended = false;
-    
+
     if (bToolbarExtended)
     {
         GENAI_LOG_WARNING("ExtendLevelEditorToolbar called but toolbar already extended, skipping");
         return;
     }
-    
+
     GENAI_LOG_INFO("ExtendLevelEditorToolbar called - first time");
-    
+
     UToolMenus::Get()->RegisterMenu("LevelEditor.MainMenu", "MainFrame.MainMenu");
-    
+
     UToolMenu* ToolbarMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.User");
     if (ToolbarMenu)
     {
         FToolMenuSection& Section = ToolbarMenu->FindOrAddSection("GenerativeAI");
-        
+
         // Add a custom widget instead of a static toolbar button
         Section.AddEntry(FToolMenuEntry::InitWidget(
             "GenerativeAIControl",
@@ -218,8 +224,8 @@ void FGenerativeAIEditorModule::ExtendLevelEditorToolbar()
                 [
                     SNew(SImage)
                     .Image_Lambda([this]() -> const FSlateBrush* {
-                        return IsServerRunning() 
-                            ? FGenAIPluginStyle::Get()->GetBrush("GenAIPlugin.StatusRunning") 
+                        return IsServerRunning()
+                            ? FGenAIPluginStyle::Get()->GetBrush("GenAIPlugin.StatusRunning")
                             : FGenAIPluginStyle::Get()->GetBrush("GenAIPlugin.StatusStopped");
                     })
                 ]
@@ -229,11 +235,11 @@ void FGenerativeAIEditorModule::ExtendLevelEditorToolbar()
             false,
             false
         ));
-        
+
         GENAI_LOG_INFO("Generative AI button added to main toolbar with dynamic icon");
     }
-    
-    // Window menu 
+
+    // Window menu
     UToolMenu* WindowMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Window");
     if (WindowMenu)
     {
@@ -250,7 +256,7 @@ void FGenerativeAIEditorModule::ExtendLevelEditorToolbar()
         );
         GENAI_LOG_INFO("Generative AI entry added to Window menu");
     }
-    
+
     bToolbarExtended = true;
 }
 
@@ -316,14 +322,14 @@ TSharedRef<SWidget> FGenerativeAIEditorModule::CreateControlPanelContent()
         .Padding(8.0f)
         [
             SNew(SVerticalBox)
-            
+
             // Status section
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 0, 0, 8)
             [
                 SNew(SHorizontalBox)
-                
+
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 .VAlign(VAlign_Center)
@@ -333,33 +339,70 @@ TSharedRef<SWidget> FGenerativeAIEditorModule::CreateControlPanelContent()
                     .Text(LOCTEXT("ServerStatusLabel", "Server Status:"))
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
-                
+
                 + SHorizontalBox::Slot()
                 .FillWidth(1.0f)
                 .VAlign(VAlign_Center)
                 [
                     SNew(STextBlock)
                     .Text_Lambda([this]() -> FText {
-                        return IsServerRunning() 
-                            ? LOCTEXT("ServerRunningStatus", "Running") 
+                        return IsServerRunning()
+                            ? LOCTEXT("ServerRunningStatus", "Running")
                             : LOCTEXT("ServerStoppedStatus", "Stopped");
                     })
                     .ColorAndOpacity_Lambda([this]() -> FSlateColor {
-                        return IsServerRunning() 
-                            ? FSlateColor(FLinearColor(0.0f, 0.8f, 0.0f)) 
+                        return IsServerRunning()
+                            ? FSlateColor(FLinearColor(0.0f, 0.8f, 0.0f))
                             : FSlateColor(FLinearColor(0.8f, 0.0f, 0.0f));
                     })
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
             ]
-            
+
+            // Server type selection
+            + SVerticalBox::Slot()
+            .AutoHeight()
+            .Padding(0, 0, 0, 8)
+            [
+                SNew(SHorizontalBox)
+
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                .Padding(0, 0, 8, 0)
+                [
+                    SNew(STextBlock)
+                    .Text(LOCTEXT("ServerTypeLabel", "Server Type:"))
+                    .Font(FAppStyle::GetFontStyle("NormalText"))
+                ]
+
+                + SHorizontalBox::Slot()
+                .FillWidth(1.0f)
+                .VAlign(VAlign_Center)
+                [
+                    SNew(SCheckBox)
+                    .IsChecked_Lambda([this]() -> ECheckBoxState {
+                        return bUseWebSocket ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+                    })
+                    .OnCheckStateChanged_Lambda([this](ECheckBoxState NewState) {
+                        bUseWebSocket = (NewState == ECheckBoxState::Checked);
+                    })
+                    .Content()
+                    [
+                        SNew(STextBlock)
+                        .Text(LOCTEXT("UseWebSocketLabel", "Use WebSocket"))
+                        .Font(FAppStyle::GetFontStyle("NormalText"))
+                    ]
+                ]
+            ]
+
             // Port information (if server is properly configured)
             + SVerticalBox::Slot()
             .AutoHeight()
             .Padding(0, 0, 0, 8)
             [
                 SNew(SHorizontalBox)
-                
+
                 + SHorizontalBox::Slot()
                 .AutoWidth()
                 .VAlign(VAlign_Center)
@@ -369,23 +412,27 @@ TSharedRef<SWidget> FGenerativeAIEditorModule::CreateControlPanelContent()
                     .Text(LOCTEXT("ServerPortLabel", "Port:"))
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
-                
+
                 + SHorizontalBox::Slot()
                 .FillWidth(1.0f)
                 .VAlign(VAlign_Center)
                 [
                     SNew(STextBlock)
                     .Text_Lambda([this]() -> FText {
-                        if (Server)
+                        if (bUseWebSocket && WebSocketServer)
+                        {
+                            return FText::AsNumber(WebSocketServer->GetConfig().Port);
+                        }
+                        else if (Server)
                         {
                             return FText::AsNumber(Server->GetConfig().Port);
                         }
-                        return FText::AsNumber(8080); // Default port
+                        return bUseWebSocket ? FText::AsNumber(8081) : FText::AsNumber(8080); // Default ports
                     })
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
             ]
-            
+
             // Buttons
             + SVerticalBox::Slot()
             .AutoHeight()
@@ -395,7 +442,7 @@ TSharedRef<SWidget> FGenerativeAIEditorModule::CreateControlPanelContent()
                 SNew(SUniformGridPanel)
                 .SlotPadding(FMargin(5.0f))
                 .MinDesiredSlotWidth(100.0f)
-                
+
                 // Start button
                 + SUniformGridPanel::Slot(0, 0)
                 [
@@ -406,7 +453,7 @@ TSharedRef<SWidget> FGenerativeAIEditorModule::CreateControlPanelContent()
                     .IsEnabled_Lambda([this]() -> bool { return !IsServerRunning(); })
                     .OnClicked(FOnClicked::CreateRaw(this, &FGenerativeAIEditorModule::OnStartServerClicked))
                 ]
-                
+
                 // Stop button
                 + SUniformGridPanel::Slot(1, 0)
                 [
@@ -418,7 +465,7 @@ TSharedRef<SWidget> FGenerativeAIEditorModule::CreateControlPanelContent()
                     .OnClicked(FOnClicked::CreateRaw(this, &FGenerativeAIEditorModule::OnStopServerClicked))
                 ]
             ]
-            
+
             // Generate content button
             + SVerticalBox::Slot()
             .AutoHeight()
@@ -452,7 +499,7 @@ FReply FGenerativeAIEditorModule::OnStopServerClicked()
 void FGenerativeAIEditorModule::ToggleServer()
 {
     GENAI_LOG_WARNING("ToggleServer called - Server state: %s", (Server && Server->IsRunning()) ? TEXT("Running") : TEXT("Not Running"));
-    
+
     if (Server && Server->IsRunning())
     {
         GENAI_LOG_WARNING("Stopping server...");
@@ -463,30 +510,108 @@ void FGenerativeAIEditorModule::ToggleServer()
         GENAI_LOG_WARNING("Starting server...");
         StartServer();
     }
-    
+
     GENAI_LOG_WARNING("ToggleServer completed - Server state: %s", (Server && Server->IsRunning()) ? TEXT("Running") : TEXT("Not Running"));
 }
 
 void FGenerativeAIEditorModule::StartServer()
 {
-    // Check if server is already running
-    if (Server && Server->IsRunning())
+    // Start the appropriate server based on configuration
+    if (bUseWebSocket)
     {
-        GENAI_LOG_WARNING("Server is already running, ignoring start request");
+        // Start WebSocket server
+        StartWebSocketServer();
+    }
+    else
+    {
+        // Start TCP server
+        // Check if server is already running
+        if (Server && Server->IsRunning())
+        {
+            GENAI_LOG_WARNING("TCP Server is already running, ignoring start request");
+            return;
+        }
+
+        GENAI_LOG_INFO("Creating new TCP server instance");
+
+        // Create a config object
+        FTCPServerConfig Config;
+        Config.Port = 8080; // Default port, can be customized
+
+        // Create the server with the config
+        Server = MakeUnique<FTCPServer>(Config);
+
+        if (Server->Start())
+        {
+            // Refresh the toolbar to update the status indicator
+            if (UToolMenus* ToolMenus = UToolMenus::Get())
+            {
+                ToolMenus->RefreshAllWidgets();
+            }
+        }
+        else
+        {
+            GENAI_LOG_ERROR("Failed to start GenerativeAI TCP Server");
+        }
+    }
+}
+
+void FGenerativeAIEditorModule::StopServer()
+{
+    // Stop both servers
+    if (Server)
+    {
+        Server->Stop();
+        Server.Reset();
+        GENAI_LOG_INFO("GenerativeAI TCP Server stopped");
+
+        // Refresh the toolbar to update the status indicator
+        if (UToolMenus* ToolMenus = UToolMenus::Get())
+        {
+            ToolMenus->RefreshAllWidgets();
+        }
+    }
+
+    if (WebSocketServer)
+    {
+        StopWebSocketServer();
+    }
+}
+
+bool FGenerativeAIEditorModule::IsServerRunning() const
+{
+    // Check if either server is running
+    bool bTCPRunning = Server && Server->IsRunning();
+    bool bWebSocketRunning = WebSocketServer && WebSocketServer->IsRunning();
+
+    return bTCPRunning || bWebSocketRunning;
+}
+
+void FGenerativeAIEditorModule::StartWebSocketServer()
+{
+    // Check if server is already running
+    if (WebSocketServer && WebSocketServer->IsRunning())
+    {
+        GENAI_LOG_WARNING("WebSocket Server is already running, ignoring start request");
         return;
     }
 
-    GENAI_LOG_INFO("Creating new server instance");
-    
+    GENAI_LOG_INFO("Creating new WebSocket server instance");
+
     // Create a config object
-    FTCPServerConfig Config;
-    Config.Port = 8080; // Default port, can be customized
-    
+    FWebSocketServerConfig Config;
+    Config.Port = 8081; // Use a different port than TCP server
+
     // Create the server with the config
-    Server = MakeUnique<FTCPServer>(Config);
-    
-    if (Server->Start())
+    WebSocketServer = MakeUnique<FWebSocketServer>(Config);
+
+    // Register message handler
+    WebSocketServer->OnMessageReceived.AddRaw(this, &FGenerativeAIEditorModule::HandleWebSocketMessage);
+
+    if (WebSocketServer->Start())
     {
+        GENAI_LOG_INFO("WebSocket Server started successfully on port %d", Config.Port);
+
         // Refresh the toolbar to update the status indicator
         if (UToolMenus* ToolMenus = UToolMenus::Get())
         {
@@ -495,18 +620,19 @@ void FGenerativeAIEditorModule::StartServer()
     }
     else
     {
-        GENAI_LOG_ERROR("Failed to start GenerativeAI Server");
+        GENAI_LOG_ERROR("Failed to start WebSocket Server");
     }
 }
 
-void FGenerativeAIEditorModule::StopServer()
+void FGenerativeAIEditorModule::StopWebSocketServer()
 {
-    if (Server)
+    if (WebSocketServer)
     {
-        Server->Stop();
-        Server.Reset();
-        GENAI_LOG_INFO("GenerativeAI Server stopped");
-        
+        WebSocketServer->OnMessageReceived.RemoveAll(this);
+        WebSocketServer->Stop();
+        WebSocketServer.Reset();
+        GENAI_LOG_INFO("WebSocket Server stopped");
+
         // Refresh the toolbar to update the status indicator
         if (UToolMenus* ToolMenus = UToolMenus::Get())
         {
@@ -515,11 +641,25 @@ void FGenerativeAIEditorModule::StopServer()
     }
 }
 
-bool FGenerativeAIEditorModule::IsServerRunning() const
+bool FGenerativeAIEditorModule::IsWebSocketServerRunning() const
 {
-    return Server && Server->IsRunning();
+    return WebSocketServer && WebSocketServer->IsRunning();
+}
+
+void FGenerativeAIEditorModule::HandleWebSocketMessage(const FString& ClientId, const FString& Message)
+{
+    GENAI_LOG_INFO("WebSocket message received from %s: %s", *ClientId, *Message);
+
+    // TODO: Process the message and send a response
+    // This is where you would parse the JSON message and dispatch to the appropriate handler
+
+    // For now, just echo the message back
+    if (WebSocketServer && WebSocketServer->IsRunning())
+    {
+        WebSocketServer->SendMessage(ClientId, FString::Printf(TEXT("Echo: %s"), *Message));
+    }
 }
 
 #undef LOCTEXT_NAMESPACE
 
-IMPLEMENT_MODULE(FGenerativeAIEditorModule, GenerativeAIEditor) 
+IMPLEMENT_MODULE(FGenerativeAIEditorModule, GenerativeAIEditor)
