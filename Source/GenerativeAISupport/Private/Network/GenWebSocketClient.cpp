@@ -22,7 +22,7 @@ void UGenWebSocketClient::Tick(float DeltaTime)
 
 bool UGenWebSocketClient::IsTickable() const
 {
-    return !IsTemplate() && !IsPendingKill();
+    return !IsTemplate() && !IsBeingDestroyed() && !HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed);
 }
 
 TStatId UGenWebSocketClient::GetStatId() const
@@ -41,7 +41,7 @@ bool UGenWebSocketClient::Connect(const FString& ServerURL, const FString& Proto
 
     // Create the WebSocket
     Socket = FWebSocketsModule::Get().CreateWebSocket(ServerURL, Protocol);
-    
+
     if (!Socket.IsValid())
     {
         LastError = TEXT("Failed to create WebSocket");
@@ -55,7 +55,7 @@ bool UGenWebSocketClient::Connect(const FString& ServerURL, const FString& Proto
 
     // Connect to the server
     Socket->Connect();
-    
+
     UE_LOG(LogTemp, Log, TEXT("WebSocket connecting to %s"), *ServerURL);
     return true;
 }
@@ -67,7 +67,7 @@ void UGenWebSocketClient::Disconnect()
         Socket->Close();
         UE_LOG(LogTemp, Log, TEXT("WebSocket disconnected"));
     }
-    
+
     // Reset state
     Socket.Reset();
     bIsConnected = false;
@@ -91,7 +91,7 @@ bool UGenWebSocketClient::SendMessage(const FString& Message)
 
     // Send the message
     Socket->Send(MessageWithNewline);
-    
+
     UE_LOG(LogTemp, Verbose, TEXT("WebSocket sent: %s"), *Message);
     return true;
 }
@@ -101,13 +101,13 @@ bool UGenWebSocketClient::SendJsonCommand(const FString& Command, const FString&
     // Create a JSON object
     TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject);
     JsonObject->SetStringField(TEXT("type"), Command);
-    
+
     // Parse and add the parameters if provided
     if (!Params.IsEmpty())
     {
         TSharedPtr<FJsonObject> ParamsObject;
         TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Params);
-        
+
         if (FJsonSerializer::Deserialize(Reader, ParamsObject))
         {
             // Add each parameter to the main JSON object
@@ -122,12 +122,12 @@ bool UGenWebSocketClient::SendJsonCommand(const FString& Command, const FString&
             JsonObject->SetStringField(TEXT("message"), Params);
         }
     }
-    
+
     // Convert to string
     FString JsonString;
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&JsonString);
     FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
-    
+
     // Send the JSON message
     return SendMessage(JsonString);
 }
@@ -148,7 +148,7 @@ void UGenWebSocketClient::SetupWebSocketHandlers()
     {
         return;
     }
-    
+
     // Connected event
     Socket->OnConnected().AddLambda([this]() {
         // This code runs on the WebSocket thread, so we need to defer to the game thread
@@ -158,7 +158,7 @@ void UGenWebSocketClient::SetupWebSocketHandlers()
             OnConnected.Broadcast(true);
         });
     });
-    
+
     // Connection error event
     Socket->OnConnectionError().AddLambda([this](const FString& Error) {
         // This code runs on the WebSocket thread, so we need to defer to the game thread
@@ -170,13 +170,13 @@ void UGenWebSocketClient::SetupWebSocketHandlers()
             OnError.Broadcast(Error);
         });
     });
-    
+
     // Message received event
     Socket->OnMessage().AddLambda([this](const FString& Message) {
         // Queue the message to be processed on the game thread
         MessageQueue.Enqueue(Message);
     });
-    
+
     // Connection closed event
     Socket->OnClosed().AddLambda([this](int32 StatusCode, const FString& Reason, bool bWasClean) {
         // This code runs on the WebSocket thread, so we need to defer to the game thread
@@ -199,7 +199,7 @@ void UGenWebSocketClient::ProcessMessages()
         {
             Message.LeftChopInline(1);
         }
-        
+
         UE_LOG(LogTemp, Verbose, TEXT("WebSocket received: %s"), *Message);
         OnMessage.Broadcast(Message);
     }
