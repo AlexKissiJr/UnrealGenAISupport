@@ -22,7 +22,7 @@ void UGenWebSocketClient::Tick(float DeltaTime)
 
 bool UGenWebSocketClient::IsTickable() const
 {
-    return !IsTemplate() && !IsBeingDestroyed() && !HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed);
+    return !IsTemplate() && !HasAnyFlags(RF_BeginDestroyed | RF_FinishDestroyed);
 }
 
 TStatId UGenWebSocketClient::GetStatId() const
