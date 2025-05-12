@@ -24,6 +24,13 @@ try:
 except ImportError:
     has_simple_server = False
 
+# Try to import the basic_websocket_server module
+try:
+    import basic_websocket_server
+    has_basic_server = True
+except ImportError:
+    has_basic_server = False
+
 # Try to import the websocket_manager module
 try:
     import websocket_manager
@@ -35,8 +42,12 @@ def start_socket_server(use_websocket=False):
     """Start the Python socket server"""
     try:
         if use_websocket:
-            # Try to use the simple WebSocket server first
-            if has_simple_server:
+            # Try to use the basic WebSocket server first (most reliable)
+            if has_basic_server:
+                unreal.log("Starting basic WebSocket server...")
+                return basic_websocket_server.initialize_server()
+            # Try to use the simple WebSocket server next
+            elif has_simple_server:
                 unreal.log("Starting simple WebSocket server...")
                 return simple_websocket_server.initialize_server()
             # Try to use the standalone WebSocket server next
@@ -68,8 +79,12 @@ def stop_socket_server(use_websocket=False):
     """Stop the Python socket server"""
     try:
         if use_websocket:
-            # Try to use the simple WebSocket server first
-            if has_simple_server:
+            # Try to use the basic WebSocket server first
+            if has_basic_server:
+                unreal.log("Stopping basic WebSocket server...")
+                return basic_websocket_server.stop_server()
+            # Try to use the simple WebSocket server next
+            elif has_simple_server:
                 unreal.log("Stopping simple WebSocket server...")
                 return simple_websocket_server.stop_server()
             # Try to use the standalone WebSocket server next
@@ -101,8 +116,11 @@ def is_socket_server_running(use_websocket=False):
     """Check if the Python socket server is running"""
     try:
         if use_websocket:
-            # Try to use the simple WebSocket server first
-            if has_simple_server:
+            # Try to use the basic WebSocket server first
+            if has_basic_server:
+                return hasattr(basic_websocket_server, 'is_running') and basic_websocket_server.is_running
+            # Try to use the simple WebSocket server next
+            elif has_simple_server:
                 return hasattr(simple_websocket_server, 'is_running') and simple_websocket_server.is_running
             # Try to use the standalone WebSocket server next
             elif has_standalone_server:
