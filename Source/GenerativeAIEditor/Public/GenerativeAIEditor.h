@@ -5,7 +5,6 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 #include "Modules/ModuleInterface.h"
-#include "WebSocketServer.h"
 #include "TCPServer.h"
 
 // Declare custom log category
@@ -28,13 +27,6 @@ public:
 	FTCPServer* GetServer() const { return Server.Get(); }
 
 	/**
-	 * Get the WebSocket server instance
-	 * External modules can use this to register custom handlers
-	 * @return The WebSocket server instance, or nullptr if not available
-	 */
-	FWebSocketServer* GetWebSocketServer() const { return WebSocketServer.Get(); }
-
-	/**
 	 * Check if WebSocket server is enabled
 	 * @return True if WebSocket server is enabled
 	 */
@@ -50,11 +42,7 @@ private:
 	void StopServer();
 	bool IsServerRunning() const;
 
-	// WebSocket specific methods
-	void StartWebSocketServer();
-	void StopWebSocketServer();
-	bool IsWebSocketServerRunning() const;
-	void HandleWebSocketMessage(const FString& ClientId, const FString& Message);
+	// WebSocket functionality is handled in Python
 
 	// Control Panel functions
 	void OpenControlPanel();
@@ -65,9 +53,8 @@ private:
 	FReply OnStartServerClicked();
 	FReply OnStopServerClicked();
 
-	// Server instances
+	// Server instance
 	TUniquePtr<FTCPServer> Server;
-	TUniquePtr<FWebSocketServer> WebSocketServer;
 
 	// UI elements
 	TSharedPtr<SWindow> ControlPanelWindow;

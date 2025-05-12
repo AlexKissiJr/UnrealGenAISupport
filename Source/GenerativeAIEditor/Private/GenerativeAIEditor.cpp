@@ -2,7 +2,6 @@
 
 #include "GenerativeAIEditor.h"
 #include "TCPServer.h"
-#include "WebSocketServer.h"
 #include "LevelEditor.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Styling/SlateStyleRegistry.h"
@@ -165,15 +164,10 @@ void FGenerativeAIEditorModule::ShutdownModule()
 
     // Unregister settings if needed
 
-    // Stop servers if running
+    // Stop server if running
     if (Server)
     {
         StopServer();
-    }
-
-    if (WebSocketServer)
-    {
-        StopWebSocketServer();
     }
 
     // Close control panel if open
@@ -516,125 +510,87 @@ void FGenerativeAIEditorModule::ToggleServer()
 
 void FGenerativeAIEditorModule::StartServer()
 {
-    // Start the appropriate server based on configuration
+    // If WebSocket mode is enabled, we don't need to start a C++ server
+    // The Python implementation will handle the WebSocket server
     if (bUseWebSocket)
     {
-        // Start WebSocket server
-        StartWebSocketServer();
+        GENAI_LOG_INFO("WebSocket mode enabled - server will be started in Python");
+
+        // Refresh the toolbar to update the status indicator
+        if (UToolMenus* ToolMenus = UToolMenus::Get())
+        {
+            ToolMenus->RefreshAllWidgets();
+        }
+
+        return;
+    }
+
+    // Start TCP server
+    // Check if server is already running
+    if (Server && Server->IsRunning())
+    {
+        GENAI_LOG_WARNING("TCP Server is already running, ignoring start request");
+        return;
+    }
+
+    GENAI_LOG_INFO("Creating new TCP server instance");
+
+    // Create a config object
+    FTCPServerConfig Config;
+    Config.Port = 8080; // Default port, can be customized
+
+    // Create the server with the config
+    Server = MakeUnique<FTCPServer>(Config);
+
+    if (Server->Start())
+    {
+        // Refresh the toolbar to update the status indicator
+        if (UToolMenus* ToolMenus = UToolMenus::Get())
+        {
+            ToolMenus->RefreshAllWidgets();
+        }
     }
     else
     {
-        // Start TCP server
-        // Check if server is already running
-        if (Server && Server->IsRunning())
-        {
-            GENAI_LOG_WARNING("TCP Server is already running, ignoring start request");
-            return;
-        }
-
-        GENAI_LOG_INFO("Creating new TCP server instance");
-
-        // Create a config object
-        FTCPServerConfig Config;
-        Config.Port = 8080; // Default port, can be customized
-
-        // Create the server with the config
-        Server = MakeUnique<FTCPServer>(Config);
-
-        if (Server->Start())
-        {
-            // Refresh the toolbar to update the status indicator
-            if (UToolMenus* ToolMenus = UToolMenus::Get())
-            {
-                ToolMenus->RefreshAllWidgets();
-            }
-        }
-        else
-        {
-            GENAI_LOG_ERROR("Failed to start GenerativeAI TCP Server");
-        }
+        GENAI_LOG_ERROR("Failed to start GenerativeAI TCP Server");
     }
 }
 
 void FGenerativeAIEditorModule::StopServer()
 {
-    // Stop both servers
+    // Stop TCP server if running
     if (Server)
     {
         Server->Stop();
         Server.Reset();
         GENAI_LOG_INFO("GenerativeAI TCP Server stopped");
-
-        // Refresh the toolbar to update the status indicator
-        if (UToolMenus* ToolMenus = UToolMenus::Get())
-        {
-            ToolMenus->RefreshAllWidgets();
-        }
     }
 
-    if (WebSocketServer)
+    // For WebSocket mode, the Python implementation will handle stopping the server
+    if (bUseWebSocket)
     {
-        StopWebSocketServer();
+        GENAI_LOG_INFO("WebSocket mode - server will be stopped in Python");
+    }
+
+    // Refresh the toolbar to update the status indicator
+    if (UToolMenus* ToolMenus = UToolMenus::Get())
+    {
+        ToolMenus->RefreshAllWidgets();
     }
 }
 
 bool FGenerativeAIEditorModule::IsServerRunning() const
 {
-    // Check if either server is running
+    // Check if TCP server is running
     bool bTCPRunning = Server && Server->IsRunning();
-    bool bWebSocketRunning = WebSocketServer && WebSocketServer->IsRunning();
 
-    return bTCPRunning || bWebSocketRunning;
+    // For WebSocket, we rely on the Python implementation
+    // The bUseWebSocket flag indicates if we're using WebSocket mode
+
+    return bTCPRunning || bUseWebSocket;
 }
 
-void FGenerativeAIEditorModule::StartWebSocketServer()
-{
-    // Create a config object
-    FWebSocketServerConfig Config;
-    Config.Port = 8081; // Use a different port than TCP server
-
-    // Create the server with the config
-    WebSocketServer = MakeUnique<FWebSocketServer>(Config);
-
-    // The actual WebSocket server is started in Python
-    if (WebSocketServer->Start())
-    {
-        GENAI_LOG_INFO("WebSocket Server placeholder created for port %d", Config.Port);
-
-        // Refresh the toolbar to update the status indicator
-        if (UToolMenus* ToolMenus = UToolMenus::Get())
-        {
-            ToolMenus->RefreshAllWidgets();
-        }
-    }
-}
-
-void FGenerativeAIEditorModule::StopWebSocketServer()
-{
-    if (WebSocketServer)
-    {
-        WebSocketServer->Stop();
-        WebSocketServer.Reset();
-        GENAI_LOG_INFO("WebSocket Server placeholder stopped");
-
-        // Refresh the toolbar to update the status indicator
-        if (UToolMenus* ToolMenus = UToolMenus::Get())
-        {
-            ToolMenus->RefreshAllWidgets();
-        }
-    }
-}
-
-bool FGenerativeAIEditorModule::IsWebSocketServerRunning() const
-{
-    return WebSocketServer && WebSocketServer->IsRunning();
-}
-
-void FGenerativeAIEditorModule::HandleWebSocketMessage(const FString& ClientId, const FString& Message)
-{
-    GENAI_LOG_INFO("WebSocket message received from %s: %s", *ClientId, *Message);
-    // This is just a placeholder - actual message handling is done in Python
-}
+// WebSocket functionality is handled in Python
 
 #undef LOCTEXT_NAMESPACE
 
