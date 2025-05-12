@@ -1,21 +1,21 @@
-# WebSocket MCP Server Guide
+# Direct WebSocket MCP Server Guide
 
-This guide provides instructions for using the WebSocket version of the MCP server in the UnrealGenAISupport plugin.
+This guide provides instructions for using the direct WebSocket version of the MCP server in the UnrealGenAISupport plugin.
 
 ## Overview
 
-The WebSocket MCP server is a drop-in replacement for the standard MCP server that:
+The direct WebSocket MCP server is a drop-in replacement for the standard MCP server that:
 
-1. Uses WebSocket protocol instead of TCP
+1. Uses our reliable basic WebSocket server implementation
 2. Works with the Python Socket UI in Unreal Engine
 3. Doesn't require any external Python modules
 4. Provides the same functionality as the standard MCP server
 
-## Using the WebSocket MCP Server
+## Using the Direct WebSocket MCP Server
 
 ### Method 1: Replace the Standard MCP Server
 
-The simplest way to use the WebSocket MCP server is to replace the standard MCP server:
+The simplest way to use the direct WebSocket MCP server is to replace the standard MCP server:
 
 1. Open the Python Console in Unreal Engine (Window > Developer Tools > Python Console)
 2. Run the following code:
