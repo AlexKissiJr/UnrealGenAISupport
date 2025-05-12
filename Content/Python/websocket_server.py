@@ -13,8 +13,16 @@ from typing import Dict, Any, Optional, List, Set, Tuple
 try:
     import websockets
 except ImportError:
-    unreal.log_error("[AI Plugin] ERROR: websockets module not found. Please install it using pip install websockets")
-    raise
+    unreal.log_warning("[AI Plugin] WARNING: websockets module not found. Falling back to direct WebSocket server.")
+
+    # Try to import the direct WebSocket server
+    try:
+        import websocket_server_direct
+        has_direct_server = True
+    except ImportError:
+        has_direct_server = False
+        unreal.log_error("[AI Plugin] ERROR: websocket_server_direct module not found. WebSocket functionality will be limited.")
+        raise
 
 # Set up logging first
 import logging
@@ -444,6 +452,21 @@ def initialize_server():
         # Make sure any previous server is stopped
         stop_server()
 
+        # Check if we should use the direct WebSocket server
+        if 'websockets' not in sys.modules and 'websocket_server_direct' in sys.modules:
+            log_info("Using direct WebSocket server implementation")
+            success = websocket_server_direct.initialize_server()
+
+            if success:
+                log_info("✅ Direct WebSocket server initialized successfully")
+                return True
+            else:
+                log_error("Failed to initialize direct WebSocket server")
+                return False
+
+        # Use the standard WebSocket server
+        log_info("Using standard WebSocket server implementation")
+
         # Start the server thread
         server_thread = threading.Thread(target=websocket_server_thread, name="websocket_server_thread")
         server_thread.daemon = True
@@ -465,7 +488,19 @@ def stop_server():
     global server_loop, server_task, server_instance, server_thread
 
     try:
-        # Close the server
+        # Check if we should use the direct WebSocket server
+        if 'websockets' not in sys.modules and 'websocket_server_direct' in sys.modules:
+            log_info("Stopping direct WebSocket server...")
+            success = websocket_server_direct.stop_server()
+
+            if success:
+                log_info("✅ Direct WebSocket server stopped successfully")
+            else:
+                log_error("Failed to stop direct WebSocket server")
+
+            return
+
+        # Close the standard WebSocket server
         if server_instance:
             log_info("Stopping WebSocket server...")
 
