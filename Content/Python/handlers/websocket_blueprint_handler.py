@@ -166,13 +166,54 @@ class WebSocketBlueprintHandler:
 
     def _handle_add_variable(self, request: Dict[str, Any]) -> str:
         """Handle add_variable operation"""
-        # Similar implementation to _handle_add_component
-        pass
+        try:
+            # Convert the request to the format expected by blueprint_commands
+            command = {
+                "type": "add_variable",
+                "blueprint_path": request.get("blueprint_path", ""),
+                "variable_name": request.get("variable_name", ""),
+                "variable_type": request.get("variable_type", ""),
+                "default_value": request.get("default_value", None),
+                "category": request.get("category", "Default")
+            }
+
+            # Call the blueprint command handler
+            result = blueprint_commands.handle_add_variable(command)
+
+            # Return the result as JSON
+            return json.dumps(result)
+
+        except Exception as e:
+            log_error(f"Error adding variable: {str(e)}", include_traceback=True)
+            return json.dumps({
+                "success": False,
+                "error": f"Error adding variable: {str(e)}"
+            })
 
     def _handle_add_function(self, request: Dict[str, Any]) -> str:
         """Handle add_function operation"""
-        # Similar implementation to _handle_add_component
-        pass
+        try:
+            # Convert the request to the format expected by blueprint_commands
+            command = {
+                "type": "add_function",
+                "blueprint_path": request.get("blueprint_path", ""),
+                "function_name": request.get("function_name", ""),
+                "inputs": request.get("inputs", []),
+                "outputs": request.get("outputs", [])
+            }
+
+            # Call the blueprint command handler
+            result = blueprint_commands.handle_add_function(command)
+
+            # Return the result as JSON
+            return json.dumps(result)
+
+        except Exception as e:
+            log_error(f"Error adding function: {str(e)}", include_traceback=True)
+            return json.dumps({
+                "success": False,
+                "error": f"Error adding function: {str(e)}"
+            })
 
     def _handle_add_event(self, request: Dict[str, Any]) -> str:
         """Handle add_event operation"""
@@ -200,13 +241,56 @@ class WebSocketBlueprintHandler:
 
     def _handle_add_node(self, request: Dict[str, Any]) -> str:
         """Handle add_node operation"""
-        # Similar implementation to _handle_add_component
-        pass
+        try:
+            # Convert the request to the format expected by blueprint_commands
+            command = {
+                "type": "add_node",
+                "blueprint_path": request.get("blueprint_path", ""),
+                "function_id": request.get("function_id", ""),
+                "node_type": request.get("node_type", ""),
+                "node_position": request.get("node_position", [0, 0]),
+                "node_properties": request.get("node_properties", {})
+            }
+
+            # Call the blueprint command handler
+            result = blueprint_commands.handle_add_node(command)
+
+            # Return the result as JSON
+            return json.dumps(result)
+
+        except Exception as e:
+            log_error(f"Error adding node: {str(e)}", include_traceback=True)
+            return json.dumps({
+                "success": False,
+                "error": f"Error adding node: {str(e)}"
+            })
 
     def _handle_connect_nodes(self, request: Dict[str, Any]) -> str:
         """Handle connect_nodes operation"""
-        # Similar implementation to _handle_add_component
-        pass
+        try:
+            # Convert the request to the format expected by blueprint_commands
+            command = {
+                "type": "connect_nodes",
+                "blueprint_path": request.get("blueprint_path", ""),
+                "function_id": request.get("function_id", ""),
+                "source_node_id": request.get("source_node_id", ""),
+                "source_pin": request.get("source_pin", ""),
+                "target_node_id": request.get("target_node_id", ""),
+                "target_pin": request.get("target_pin", "")
+            }
+
+            # Call the blueprint command handler
+            result = blueprint_commands.handle_connect_nodes(command)
+
+            # Return the result as JSON
+            return json.dumps(result)
+
+        except Exception as e:
+            log_error(f"Error connecting nodes: {str(e)}", include_traceback=True)
+            return json.dumps({
+                "success": False,
+                "error": f"Error connecting nodes: {str(e)}"
+            })
 
     def _handle_generate_blueprint(self, request: Dict[str, Any]) -> str:
         """
