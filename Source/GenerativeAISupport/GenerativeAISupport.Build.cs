@@ -29,10 +29,11 @@ public class GenerativeAISupport : ModuleRules
 			{
 				"Core", "Engine", "ImageDownload", "ImageDownload",
 				// New dependencies
-				"CoreUObject", "UnrealEd", 
+				"CoreUObject", "UnrealEd",
 				"Networking", "Sockets", "Slate", "SlateCore", "EditorStyle",
 				"DeveloperSettings", "Projects", "ToolMenus",
-				"BlueprintGraph", "GraphEditor", "KismetCompiler"
+				"BlueprintGraph", "GraphEditor", "KismetCompiler",
+				"WebSockets" // Added WebSockets module
 				// ... add other public dependencies that you statically link with here ...
 			}
 		);
@@ -47,7 +48,7 @@ public class GenerativeAISupport : ModuleRules
 				"SlateCore",
 				"Json",
 				"HTTP",
-				"EditorScriptingUtilities", 
+				"EditorScriptingUtilities",
 				"Blutility",
 				"UnrealEd",
 				"MaterialEditor",
@@ -56,7 +57,7 @@ public class GenerativeAISupport : ModuleRules
 				// New dependencies
 				"JsonUtilities", "Settings", "InputCore", "PythonScriptPlugin",
 				"Kismet", "KismetWidgets"
-				// ... add private dependencies that you statically link with here ...	
+				// ... add private dependencies that you statically link with here ...
 			}
 		);
 
