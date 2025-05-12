@@ -413,15 +413,15 @@ TSharedRef<SWidget> FGenerativeAIEditorModule::CreateControlPanelContent()
                 [
                     SNew(STextBlock)
                     .Text_Lambda([this]() -> FText {
-                        if (bUseWebSocket && WebSocketServer)
+                        if (bUseWebSocket)
                         {
-                            return FText::AsNumber(WebSocketServer->GetConfig().Port);
+                            return FText::AsNumber(8081); // WebSocket port
                         }
                         else if (Server)
                         {
                             return FText::AsNumber(Server->GetConfig().Port);
                         }
-                        return bUseWebSocket ? FText::AsNumber(8081) : FText::AsNumber(8080); // Default ports
+                        return FText::AsNumber(8080); // Default TCP port
                     })
                     .Font(FAppStyle::GetFontStyle("NormalText"))
                 ]
