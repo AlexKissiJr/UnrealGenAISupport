@@ -223,9 +223,9 @@ async def start_websocket_server(host='localhost', port=8081):
         # Create a server instance with the handler function
         # The handler function must accept websocket and path parameters
         server_instance = await websockets.serve(
-            ws_handler=handle_websocket,  # Explicitly name the parameter
-            host=host,
-            port=available_port
+            handle_websocket,  # First positional argument must be the handler
+            host,
+            available_port
         )
 
         log.log_info(f"WebSocket server started on ws://{host}:{available_port}")
