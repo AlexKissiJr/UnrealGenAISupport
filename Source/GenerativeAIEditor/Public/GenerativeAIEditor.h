@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
 #include "Modules/ModuleInterface.h"
+#include "WebSocketServer.h"
 
 // Declare custom log category
 DECLARE_LOG_CATEGORY_EXTERN(LogGenAI, Log, All);

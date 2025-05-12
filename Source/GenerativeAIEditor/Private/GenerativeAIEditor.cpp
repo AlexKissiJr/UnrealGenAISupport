@@ -589,15 +589,6 @@ bool FGenerativeAIEditorModule::IsServerRunning() const
 
 void FGenerativeAIEditorModule::StartWebSocketServer()
 {
-    // Check if server is already running
-    if (WebSocketServer && WebSocketServer->IsRunning())
-    {
-        GENAI_LOG_WARNING("WebSocket Server is already running, ignoring start request");
-        return;
-    }
-
-    GENAI_LOG_INFO("Creating new WebSocket server instance");
-
     // Create a config object
     FWebSocketServerConfig Config;
     Config.Port = 8081; // Use a different port than TCP server
@@ -605,12 +596,10 @@ void FGenerativeAIEditorModule::StartWebSocketServer()
     // Create the server with the config
     WebSocketServer = MakeUnique<FWebSocketServer>(Config);
 
-    // Register message handler
-    WebSocketServer->OnMessageReceived.AddRaw(this, &FGenerativeAIEditorModule::HandleWebSocketMessage);
-
+    // The actual WebSocket server is started in Python
     if (WebSocketServer->Start())
     {
-        GENAI_LOG_INFO("WebSocket Server started successfully on port %d", Config.Port);
+        GENAI_LOG_INFO("WebSocket Server placeholder created for port %d", Config.Port);
 
         // Refresh the toolbar to update the status indicator
         if (UToolMenus* ToolMenus = UToolMenus::Get())
@@ -618,20 +607,15 @@ void FGenerativeAIEditorModule::StartWebSocketServer()
             ToolMenus->RefreshAllWidgets();
         }
     }
-    else
-    {
-        GENAI_LOG_ERROR("Failed to start WebSocket Server");
-    }
 }
 
 void FGenerativeAIEditorModule::StopWebSocketServer()
 {
     if (WebSocketServer)
     {
-        WebSocketServer->OnMessageReceived.RemoveAll(this);
         WebSocketServer->Stop();
         WebSocketServer.Reset();
-        GENAI_LOG_INFO("WebSocket Server stopped");
+        GENAI_LOG_INFO("WebSocket Server placeholder stopped");
 
         // Refresh the toolbar to update the status indicator
         if (UToolMenus* ToolMenus = UToolMenus::Get())
@@ -649,15 +633,7 @@ bool FGenerativeAIEditorModule::IsWebSocketServerRunning() const
 void FGenerativeAIEditorModule::HandleWebSocketMessage(const FString& ClientId, const FString& Message)
 {
     GENAI_LOG_INFO("WebSocket message received from %s: %s", *ClientId, *Message);
-
-    // TODO: Process the message and send a response
-    // This is where you would parse the JSON message and dispatch to the appropriate handler
-
-    // For now, just echo the message back
-    if (WebSocketServer && WebSocketServer->IsRunning())
-    {
-        WebSocketServer->SendMessage(ClientId, FString::Printf(TEXT("Echo: %s"), *Message));
-    }
+    // This is just a placeholder - actual message handling is done in Python
 }
 
 #undef LOCTEXT_NAMESPACE
