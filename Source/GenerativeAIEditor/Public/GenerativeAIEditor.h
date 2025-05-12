@@ -6,12 +6,11 @@
 #include "Modules/ModuleManager.h"
 #include "Modules/ModuleInterface.h"
 #include "WebSocketServer.h"
+#include "TCPServer.h"
 
 // Declare custom log category
 DECLARE_LOG_CATEGORY_EXTERN(LogGenAI, Log, All);
 
-class FTCPServer;
-class FWebSocketServer;
 class SWindow;
 
 class GENERATIVEAIEDITOR_API FGenerativeAIEditorModule : public IModuleInterface, public TSharedFromThis<FGenerativeAIEditorModule>
