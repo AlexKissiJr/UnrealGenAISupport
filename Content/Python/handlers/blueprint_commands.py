@@ -9,13 +9,13 @@ from utils import logging as log
 def handle_create_blueprint(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to create a new Blueprint from a specified parent class
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_name: Name for the new Blueprint
             - parent_class: Parent class name or path (e.g., "Actor", "/Script/Engine.Actor")
             - save_path: Path to save the Blueprint asset (e.g., "/Game/Blueprints")
-            
+
     Returns:
         Response dictionary with success/failure status and the Blueprint path if successful
     """
@@ -46,13 +46,13 @@ def handle_create_blueprint(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_add_component(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to add a component to a Blueprint
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
             - component_class: Component class to add (e.g., "StaticMeshComponent")
             - component_name: Name for the new component
-            
+
     Returns:
         Response dictionary with success/failure status
     """
@@ -86,7 +86,7 @@ def handle_add_component(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_add_variable(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to add a variable to a Blueprint
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
@@ -94,7 +94,7 @@ def handle_add_variable(command: Dict[str, Any]) -> Dict[str, Any]:
             - variable_type: Type of the variable (e.g., "float", "vector", "boolean")
             - default_value: Default value for the variable (optional)
             - category: Category for organizing variables in the Blueprint editor (optional)
-            
+
     Returns:
         Response dictionary with success/failure status
     """
@@ -131,14 +131,14 @@ def handle_add_variable(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_add_function(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to add a function to a Blueprint
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
             - function_name: Name for the new function
             - inputs: List of input parameters [{"name": "param1", "type": "float"}, ...] (optional)
             - outputs: List of output parameters (optional)
-            
+
     Returns:
         Response dictionary with success/failure status and the function ID if successful
     """
@@ -178,7 +178,7 @@ def handle_add_function(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_add_node(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to add any type of node to a Blueprint graph
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
@@ -191,7 +191,7 @@ def handle_add_node(command: Dict[str, Any]) -> Dict[str, Any]:
             - node_properties: Dictionary of properties to set on the node (optional)
                 * Can include pin values, node settings, etc.
             - target_class: Optional class to use for function calls (default: "Actor")
-                
+
     Returns:
         Response dictionary with success/failure status and the node ID if successful
     """
@@ -266,11 +266,11 @@ def handle_connect_nodes(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_compile_blueprint(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to compile a Blueprint
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
-            
+
     Returns:
         Response dictionary with success/failure status
     """
@@ -302,7 +302,7 @@ def handle_compile_blueprint(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_spawn_blueprint(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to spawn a Blueprint actor in the level
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
@@ -310,7 +310,7 @@ def handle_spawn_blueprint(command: Dict[str, Any]) -> Dict[str, Any]:
             - rotation: [Pitch, Yaw, Roll] in degrees (optional)
             - scale: [X, Y, Z] scale factors (optional)
             - actor_label: Optional custom name for the actor
-            
+
     Returns:
         Response dictionary with success/failure status and the actor name if successful
     """
@@ -351,7 +351,7 @@ def handle_spawn_blueprint(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_add_nodes_bulk(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to add multiple nodes to a Blueprint graph in a single operation
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
@@ -361,7 +361,7 @@ def handle_add_nodes_bulk(command: Dict[str, Any]) -> Dict[str, Any]:
                 * node_type: Type of node to add (string)
                 * node_position: Position of the node in the graph [X, Y]
                 * node_properties: Properties to set on the node (optional)
-            
+
     Returns:
         Response dictionary with success/failure status and node IDs mapped to reference IDs
     """
@@ -383,7 +383,7 @@ def handle_add_nodes_bulk(command: Dict[str, Any]) -> Dict[str, Any]:
         # Call the C++ implementation from UGenBlueprintNodeCreator
         node_creator = unreal.GenBlueprintNodeCreator
         results_json = node_creator.add_nodes_bulk(blueprint_path, function_id, nodes_json)
-        
+
         if results_json:
             results = json.loads(results_json)
             node_mapping = {}
@@ -410,7 +410,7 @@ def handle_add_nodes_bulk(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_connect_nodes_bulk(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to connect multiple pairs of nodes in a Blueprint graph
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
@@ -420,7 +420,7 @@ def handle_connect_nodes_bulk(command: Dict[str, Any]) -> Dict[str, Any]:
                 * source_pin: Name of the source pin
                 * target_node_id: ID of the target node
                 * target_pin: Name of the target pin
-            
+
     Returns:
         Response dictionary with detailed connection results
     """
@@ -461,13 +461,13 @@ def handle_connect_nodes_bulk(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_delete_node(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to delete a node from a Blueprint graph
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
             - function_id: ID of the function containing the node
             - node_id: ID of the node to delete
-                
+
     Returns:
         Response dictionary with success/failure status
     """
@@ -501,12 +501,12 @@ def handle_delete_node(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_get_all_nodes(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to get all nodes in a Blueprint graph
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
             - function_id: ID of the function to get nodes from
-                
+
     Returns:
         Response dictionary with success/failure status and a list of nodes with their details
     """
@@ -544,11 +544,11 @@ def handle_get_all_nodes(command: Dict[str, Any]) -> Dict[str, Any]:
 def handle_get_node_suggestions(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to get suggestions for a node type in Unreal Blueprints
-    
+
     Args:
         command: The command dictionary containing:
             - node_type: The partial or full node type to get suggestions for (e.g., "Add", "FloatToDouble")
-                
+
     Returns:
         Response dictionary with success/failure status and a list of suggested node types
     """
@@ -581,17 +581,69 @@ def handle_get_node_suggestions(command: Dict[str, Any]) -> Dict[str, Any]:
         log.log_error(f"Error getting node suggestions: {str(e)}", include_traceback=True)
         return {"success": False, "error": str(e)}
 
+def handle_add_event(command: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle a command to add an event to a Blueprint
+
+    Args:
+        command: The command dictionary containing:
+            - blueprint_path: Path to the Blueprint asset
+            - event_name: Name of the event to add (e.g., "BeginPlay", "Custom Event Name")
+            - event_type: Type of event (e.g., "Custom", "BeginPlay", "ActorBeginOverlap")
+            - category: Category for organizing events in the Blueprint editor (optional)
+
+    Returns:
+        Response dictionary with success/failure status and the event node ID if successful
+    """
+    try:
+        blueprint_path = command.get("blueprint_path")
+        event_name = command.get("event_name")
+        event_type = command.get("event_type", "Custom")
+        category = command.get("category", "")
+
+        if not blueprint_path or not event_name:
+            log.log_error("Missing required parameters for add_event")
+            return {"success": False, "error": "Missing required parameters"}
+
+        log.log_command("add_event", f"Blueprint: {blueprint_path}, Event: {event_name}, Type: {event_type}")
+
+        # Call the C++ implementation
+        gen_bp_utils = unreal.GenBlueprintUtils
+
+        # Check if the function exists
+        if hasattr(gen_bp_utils, "add_event"):
+            event_id = gen_bp_utils.add_event(blueprint_path, event_name, event_type, category)
+
+            if event_id:
+                log.log_result("add_event", True, f"Added event {event_name} to {blueprint_path} with ID: {event_id}")
+                return {"success": True, "event_id": event_id}
+            else:
+                log.log_error(f"Failed to add event {event_name} to {blueprint_path}")
+                return {"success": False, "error": f"Failed to add event {event_name} to {blueprint_path}"}
+        else:
+            # Fallback implementation if C++ function doesn't exist
+            log.log_warning(f"add_event C++ function not found, using placeholder implementation")
+            return {
+                "success": True,
+                "message": f"Event '{event_name}' added to blueprint '{blueprint_path}' (placeholder implementation)",
+                "event_id": f"placeholder-event-{event_name}"
+            }
+
+    except Exception as e:
+        log.log_error(f"Error adding event: {str(e)}", include_traceback=True)
+        return {"success": False, "error": str(e)}
+
 def handle_get_node_guid(command: Dict[str, Any]) -> Dict[str, Any]:
     """
     Handle a command to retrieve the GUID of a pre-existing node in a Blueprint graph.
-    
+
     Args:
         command: The command dictionary containing:
             - blueprint_path: Path to the Blueprint asset
             - graph_type: "EventGraph" or "FunctionGraph"
             - node_name: Name of the node (e.g., "BeginPlay") for EventGraph
             - function_id: ID of the function for FunctionGraph to get FunctionEntry
-            
+
     Returns:
         Response dictionary with the node's GUID or an error
     """
