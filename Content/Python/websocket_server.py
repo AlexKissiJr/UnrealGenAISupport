@@ -242,8 +242,12 @@ class CommandDispatcher:
 dispatcher = CommandDispatcher()
 
 # Process commands on the main thread via Slate tick callback
-def process_commands_tick():
-    """Process commands on the main thread via Slate tick callback"""
+def process_commands_tick(delta_time=0.0):
+    """Process commands on the main thread via Slate tick callback
+
+    Args:
+        delta_time: The time since the last tick (passed by Unreal Engine)
+    """
     try:
         # Process up to 10 commands per tick to avoid blocking
         for _ in range(10):
