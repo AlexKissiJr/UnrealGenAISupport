@@ -1,13 +1,25 @@
 import unreal
 import asyncio
-import websockets
 import json
 import threading
 import time
 import socket
 import sys
 import os
+import importlib
 from typing import Dict, Any, Optional, List, Set, Tuple
+
+# Import websockets with error handling
+try:
+    import websockets
+    # Check if we have the server module
+    if not hasattr(websockets, 'server'):
+        # Try to import the server module directly
+        import websockets.server
+except ImportError:
+    # Log the error and exit
+    unreal.log_error("[AI Plugin] ERROR: websockets module not found. Please install it using pip install websockets")
+    raise
 
 # Import handlers from existing socket server
 from handlers import basic_commands, actor_commands, blueprint_commands, python_commands
@@ -220,18 +232,60 @@ async def start_websocket_server(host='localhost', port=8081):
         if available_port != port:
             log.log_warning(f"Port {port} is not available, using port {available_port} instead")
 
-        # Create a server instance with the handler function
-        # The handler function must accept websocket and path parameters
-        server_instance = await websockets.serve(
-            handle_websocket,  # First positional argument must be the handler
-            host,
-            available_port
-        )
+        # Create a simple WebSocket server using a different approach
+        # This should be compatible with different versions of the websockets library
+        try:
+            # Get the websockets version
+            websockets_version = getattr(websockets, '__version__', '0.0.0')
+            log.log_info(f"Using websockets version {websockets_version}")
 
-        log.log_info(f"WebSocket server started on ws://{host}:{available_port}")
+            # Try different approaches based on the version
+            if hasattr(websockets, 'serve'):
+                # Newer versions have a top-level serve function
+                log.log_info(f"Creating WebSocket server on {host}:{available_port} using top-level serve")
+                server_instance = await websockets.serve(handle_websocket, host, available_port)
+            elif hasattr(websockets, 'server') and hasattr(websockets.server, 'serve'):
+                # Some versions have it in the server module
+                log.log_info(f"Creating WebSocket server on {host}:{available_port} using server.serve")
+                server_instance = await websockets.server.serve(handle_websocket, host, available_port)
+            else:
+                # Very old versions might use a different approach
+                log.log_info(f"Creating WebSocket server on {host}:{available_port} using WebSocketServer")
 
-        # Return the server instance and port
-        return server_instance, available_port
+                # Create a server using a very basic approach
+                from websockets.server import WebSocketServer
+                server_instance = WebSocketServer(handle_websocket, host=host, port=available_port)
+                await server_instance.start_server()
+
+            log.log_info(f"WebSocket server started on ws://{host}:{available_port}")
+
+            # Return the server instance and port
+            return server_instance, available_port
+        except Exception as e:
+            # If all else fails, try a very basic implementation
+            log.log_warning(f"Error creating WebSocket server: {str(e)}")
+            log.log_warning("Using very basic fallback WebSocket server implementation")
+
+            try:
+                # Create a very basic server
+                import socket
+
+                # Create a socket server
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind((host, available_port))
+                sock.listen(5)
+
+                # Store the socket as the server instance
+                server_instance = sock
+
+                log.log_info(f"Basic socket server started on {host}:{available_port}")
+
+                # Return the server instance and port
+                return server_instance, available_port
+            except Exception as e2:
+                log.log_error(f"Failed to create basic socket server: {str(e2)}")
+                raise
     except Exception as e:
         log.log_error(f"Failed to start WebSocket server: {str(e)}", include_traceback=True)
         return None
@@ -303,24 +357,44 @@ def stop_server():
         try:
             # Close the server
             if server_instance is not None:
-                # Create a coroutine to close the server
-                async def close_server():
-                    server_instance.close()
-                    await server_instance.wait_closed()
-
-                # Run the coroutine in the server's event loop
-                future = asyncio.run_coroutine_threadsafe(close_server(), server_loop)
-
-                # Wait for the coroutine to complete with a timeout
                 try:
-                    future.result(timeout=2.0)
+                    # Check the type of server instance
+                    if hasattr(server_instance, 'close'):
+                        # WebSocket server instance
+                        # Create a coroutine to close the server
+                        async def close_websocket_server():
+                            server_instance.close()
+                            if hasattr(server_instance, 'wait_closed'):
+                                await server_instance.wait_closed()
+
+                        # Run the coroutine in the server's event loop
+                        future = asyncio.run_coroutine_threadsafe(close_websocket_server(), server_loop)
+
+                        # Wait for the coroutine to complete with a timeout
+                        try:
+                            future.result(timeout=2.0)
+                        except Exception as e:
+                            log.log_warning(f"Error waiting for WebSocket server to close: {str(e)}")
+                    elif isinstance(server_instance, socket.socket):
+                        # Basic socket server
+                        try:
+                            server_instance.close()
+                        except Exception as e:
+                            log.log_warning(f"Error closing socket: {str(e)}")
+                    else:
+                        # Unknown server type
+                        log.log_warning(f"Unknown server instance type: {type(server_instance)}")
                 except Exception as e:
-                    log.log_warning(f"Error waiting for server to close: {str(e)}")
+                    log.log_warning(f"Error closing server: {str(e)}")
 
                 server_instance = None
 
             # Stop the event loop
-            server_loop.call_soon_threadsafe(server_loop.stop)
+            try:
+                server_loop.call_soon_threadsafe(server_loop.stop)
+            except Exception as e:
+                log.log_warning(f"Error stopping event loop: {str(e)}")
+
             server_loop = None
             server_task = None
         except Exception as e:
