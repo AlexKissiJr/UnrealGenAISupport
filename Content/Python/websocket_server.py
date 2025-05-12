@@ -130,6 +130,8 @@ class CommandDispatcher:
         self.handlers = {
             # Always have handshake available
             "handshake": self._handle_handshake,
+            # Add a simple ping handler for testing
+            "ping": self._handle_ping,
         }
 
         # Basic object commands
@@ -221,6 +223,19 @@ class CommandDispatcher:
             "success": True,
             "message": f"WebSocket handshake received: {message}",
             "connection_info": connection_info
+        }
+
+    def _handle_ping(self, command: Dict[str, Any]) -> Dict[str, Any]:
+        """Built-in handler for ping command"""
+        timestamp = command.get("timestamp", 0)
+        log.log_info(f"WebSocket ping received: {timestamp}")
+
+        return {
+            "success": True,
+            "type": "pong",
+            "original_timestamp": timestamp,
+            "server_timestamp": time.time(),
+            "message": "Pong from WebSocket server"
         }
 
 # Create global dispatcher instance
