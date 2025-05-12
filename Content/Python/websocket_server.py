@@ -38,7 +38,7 @@ log.addHandler(console_handler)
 def log_info(message):
     """Log info message"""
     log.info(message)
-    unreal.log_info(f"[WebSocket] {message}")
+    unreal.log(f"[WebSocket] {message}")
 
 def log_warning(message):
     """Log warning message"""
@@ -200,13 +200,13 @@ class CommandDispatcher:
         try:
             return handler(command)
         except Exception as e:
-            log.log_error(f"Error handling command {command_type}: {str(e)}", include_traceback=True)
+            log_error(f"Error handling command {command_type}: {str(e)}", include_traceback=True)
             return {"success": False, "error": str(e)}
 
     def _handle_handshake(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """Built-in handler for handshake command"""
         message = command.get("message", "")
-        log.log_info(f"WebSocket handshake received: {message}")
+        log_info(f"WebSocket handshake received: {message}")
 
         # Get Unreal Engine version
         engine_version = unreal.SystemLibrary.get_engine_version()
@@ -228,7 +228,7 @@ class CommandDispatcher:
     def _handle_ping(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """Built-in handler for ping command"""
         timestamp = command.get("timestamp", 0)
-        log.log_info(f"WebSocket ping received: {timestamp}")
+        log_info(f"WebSocket ping received: {timestamp}")
 
         return {
             "success": True,
@@ -252,7 +252,7 @@ def process_commands_tick():
 
             try:
                 command_id, command, websocket = command_queue.get_nowait()
-                log.log_info(f"Processing WebSocket command on game thread: {command}")
+                log_info(f"Processing WebSocket command on game thread: {command}")
 
                 try:
                     response = dispatcher.dispatch(command)
@@ -262,7 +262,7 @@ def process_commands_tick():
                         response_dict[command_id] = (response, websocket)
 
                 except Exception as e:
-                    log.log_error(f"Error processing WebSocket command: {str(e)}", include_traceback=True)
+                    log_error(f"Error processing WebSocket command: {str(e)}", include_traceback=True)
 
                     # Store error response with thread safety
                     with response_lock:
@@ -275,7 +275,7 @@ def process_commands_tick():
             except queue.Empty:
                 break
     except Exception as e:
-        log.log_error(f"Error in process_commands_tick: {str(e)}", include_traceback=True)
+        log_error(f"Error in process_commands_tick: {str(e)}", include_traceback=True)
 
     # Return True to keep the callback registered
     return True
@@ -290,7 +290,7 @@ async def handle_websocket(websocket, path):
     """
     client_id = f"client-{id(websocket)}"
     connected_clients.add(websocket)
-    log.log_info(f"🟢 WebSocket client connected: {client_id} (path: {path})")
+    log_info(f"🟢 WebSocket client connected: {client_id} (path: {path})")
 
     try:
         async for message in websocket:
@@ -300,7 +300,7 @@ async def handle_websocket(websocket, path):
                     message = message[:-1]  # Remove trailing newline
 
                 command = json.loads(message)
-                log.log_info(f"WebSocket message received from {client_id}: {command}")
+                log_info(f"WebSocket message received from {client_id}: {command}")
 
                 # Check for special command types that use our WebSocket-specific handlers
                 command_type = command.get("type", "")
@@ -313,7 +313,7 @@ async def handle_websocket(websocket, path):
                         await websocket.send(response_json + '\n')
                         continue
                     except Exception as e:
-                        log.log_error(f"Error in blueprint handler: {str(e)}", include_traceback=True)
+                        log_error(f"Error in blueprint handler: {str(e)}", include_traceback=True)
                         await websocket.send(json.dumps({
                             "success": False,
                             "error": f"Error in blueprint handler: {str(e)}"
@@ -328,7 +328,7 @@ async def handle_websocket(websocket, path):
                         await websocket.send(response_json + '\n')
                         continue
                     except Exception as e:
-                        log.log_error(f"Error in actor handler: {str(e)}", include_traceback=True)
+                        log_error(f"Error in actor handler: {str(e)}", include_traceback=True)
                         await websocket.send(json.dumps({
                             "success": False,
                             "error": f"Error in actor handler: {str(e)}"
@@ -367,18 +367,18 @@ async def handle_websocket(websocket, path):
                         }
                         await websocket.send(json.dumps(error_response) + '\n')
             except json.JSONDecodeError as e:
-                log.log_error(f"Invalid JSON from {client_id}: {str(e)}")
+                log_error(f"Invalid JSON from {client_id}: {str(e)}")
                 await websocket.send(json.dumps({"success": False, "error": f"Invalid JSON: {str(e)}"}) + '\n')
             except Exception as e:
-                log.log_error(f"Error handling message from {client_id}: {str(e)}", include_traceback=True)
+                log_error(f"Error handling message from {client_id}: {str(e)}", include_traceback=True)
                 await websocket.send(json.dumps({"success": False, "error": str(e)}) + '\n')
     except websockets.exceptions.ConnectionClosed:
-        log.log_info(f"WebSocket connection closed for {client_id}")
+        log_info(f"WebSocket connection closed for {client_id}")
     except Exception as e:
-        log.log_error(f"WebSocket handler error for {client_id}: {str(e)}", include_traceback=True)
+        log_error(f"WebSocket handler error for {client_id}: {str(e)}", include_traceback=True)
     finally:
         connected_clients.discard(websocket)
-        log.log_info(f"🔴 WebSocket client disconnected: {client_id}")
+        log_info(f"🔴 WebSocket client disconnected: {client_id}")
 
 # Start the WebSocket server
 async def start_websocket_server():
@@ -389,14 +389,14 @@ async def start_websocket_server():
     port = 9877  # Fixed port as specified in requirements
 
     try:
-        log.log_info(f"🟢 Starting WebSocket server on {host}:{port}...")
+        log_info(f"🟢 Starting WebSocket server on {host}:{port}...")
         server_instance = await websockets.serve(handle_websocket, host, port)
-        log.log_info(f"✅ WebSocket server started successfully on ws://{host}:{port}")
+        log_info(f"✅ WebSocket server started successfully on ws://{host}:{port}")
 
         # Keep the server running
         await asyncio.Future()  # Run forever
     except Exception as e:
-        log.log_error(f"Failed to start WebSocket server: {str(e)}", include_traceback=True)
+        log_error(f"Failed to start WebSocket server: {str(e)}", include_traceback=True)
         return None
 
 # Thread function to run the WebSocket server
@@ -415,9 +415,9 @@ def websocket_server_thread():
         # Run the event loop
         server_loop.run_forever()
     except Exception as e:
-        log.log_error(f"Error in WebSocket server thread: {str(e)}", include_traceback=True)
+        log_error(f"Error in WebSocket server thread: {str(e)}", include_traceback=True)
     finally:
-        log.log_info("WebSocket server thread exiting")
+        log_info("WebSocket server thread exiting")
 
 # Register the command processor on the main thread
 def register_command_processor():
@@ -425,9 +425,9 @@ def register_command_processor():
     try:
         # Register a no-argument callback for Slate post-tick
         unreal.register_slate_post_tick_callback(process_commands_tick)
-        log.log_info("✅ Registered WebSocket command processor on game thread")
+        log_info("✅ Registered WebSocket command processor on game thread")
     except Exception as e:
-        log.log_error(f"Failed to register command processor: {str(e)}", include_traceback=True)
+        log_error(f"Failed to register command processor: {str(e)}", include_traceback=True)
 
 # Initialize the server
 def initialize_server():
@@ -435,7 +435,7 @@ def initialize_server():
     global server_thread
 
     try:
-        log.log_info("🟢 Initializing WebSocket server...")
+        log_info("🟢 Initializing WebSocket server...")
 
         # Make sure any previous server is stopped
         stop_server()
@@ -444,15 +444,15 @@ def initialize_server():
         server_thread = threading.Thread(target=websocket_server_thread, name="websocket_server_thread")
         server_thread.daemon = True
         server_thread.start()
-        log.log_info("✅ WebSocket server thread started")
+        log_info("✅ WebSocket server thread started")
 
         # Register the command processor on the main thread
         register_command_processor()
 
-        log.log_info("✅ Unreal Engine WebSocket AI command server initialized successfully")
+        log_info("✅ Unreal Engine WebSocket AI command server initialized successfully")
         return True
     except Exception as e:
-        log.log_error(f"Failed to initialize WebSocket server: {str(e)}", include_traceback=True)
+        log_error(f"Failed to initialize WebSocket server: {str(e)}", include_traceback=True)
         return False
 
 # Stop the server
@@ -463,7 +463,7 @@ def stop_server():
     try:
         # Close the server
         if server_instance:
-            log.log_info("Stopping WebSocket server...")
+            log_info("Stopping WebSocket server...")
 
             # Close the event loop
             if server_loop and server_loop.is_running():
@@ -477,9 +477,9 @@ def stop_server():
                 server_thread.join(timeout=2.0)
 
             server_thread = None
-            log.log_info("WebSocket server stopped")
+            log_info("WebSocket server stopped")
     except Exception as e:
-        log.log_error(f"Error stopping WebSocket server: {str(e)}", include_traceback=True)
+        log_error(f"Error stopping WebSocket server: {str(e)}", include_traceback=True)
 
 # Example of how to use in an Editor Utility Widget:
 """
