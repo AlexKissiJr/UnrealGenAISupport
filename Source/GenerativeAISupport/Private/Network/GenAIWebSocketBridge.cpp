@@ -1,8 +1,8 @@
 #include "Network/GenAIWebSocketBridge.h"
 #include "Network/GenWebSocketManager.h"
-#include "AI/GenOAIChat.h"
-#include "AI/GenClaudeChat.h"
-#include "AI/GenDSeekChat.h"
+#include "Models/OpenAI/GenOAIChat.h"
+#include "Models/Anthropic/GenClaudeChat.h"
+#include "Models/DeepSeek/GenDSeekChat.h"
 #include "Json.h"
 #include "JsonUtilities.h"
 
@@ -70,7 +70,7 @@ bool UGenAIWebSocketBridge::SendAIRequest(const FString& ModelType, const FStrin
     JsonObject->SetStringField(TEXT("type"), TEXT("ai_request"));
     JsonObject->SetStringField(TEXT("model_type"), ModelType);
     JsonObject->SetStringField(TEXT("prompt"), Prompt);
-    
+
     if (!SystemPrompt.IsEmpty())
     {
         JsonObject->SetStringField(TEXT("system_prompt"), SystemPrompt);
