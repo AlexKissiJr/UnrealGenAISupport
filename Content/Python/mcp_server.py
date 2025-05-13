@@ -2,12 +2,38 @@ import socket
 import json
 import sys
 import os
-from mcp.server.fastmcp import FastMCP
 import re
 from pathlib import Path
 
+# Try to import the MCP module, but don't fail if it's not available
+try:
+    from mcp.server.fastmcp import FastMCP
+    HAS_MCP = True
+except ImportError:
+    print("MCP module not available, creating a minimal implementation", file=sys.stderr)
+    HAS_MCP = False
 
-# THIS FILE WILL RUN OUTSIDE THE UNREAL ENGINE SCOPE, 
+    # Create a minimal FastMCP implementation
+    class FastMCP:
+        def __init__(self, name):
+            self.name = name
+            self.tools = {}
+
+        def tool(self, description=None):
+            def decorator(func):
+                self.tools[func.__name__] = func
+                return func
+
+            # Handle case where decorator is used without parentheses
+            if callable(description):
+                func = description
+                description = None
+                return decorator(func)
+
+            return decorator
+
+
+# THIS FILE WILL RUN OUTSIDE THE UNREAL ENGINE SCOPE,
 # DO NOT IMPORT UNREAL MODULES HERE OR EXECUTE IT IN THE UNREAL ENGINE PYTHON INTERPRETER
 
 # Create a PID file to let the Unreal plugin know this process is running
@@ -45,6 +71,28 @@ if pid_file:
 
 # Create an MCP server
 mcp = FastMCP("UnrealHandshake")
+
+# Helper function to check for potentially destructive scripts
+def is_potentially_destructive(script):
+    """Check if a script contains potentially destructive operations"""
+    destructive_patterns = [
+        r'\.save\(',
+        r'\.delete\(',
+        r'os\.remove',
+        r'os\.unlink',
+        r'os\.rmdir',
+        r'shutil\.rmtree',
+        r'\.close\(\)',
+        r'sys\.exit',
+        r'quit\(',
+        r'exit\('
+    ]
+
+    for pattern in destructive_patterns:
+        if re.search(pattern, script):
+            return True
+
+    return False
 
 
 # Function to send a message to Unreal Engine via socket
@@ -129,13 +177,13 @@ def handshake_test(message: str) -> str:
 def execute_python_script(script: str) -> str:
     """
     Execute a Python script within Unreal Engine's Python interpreter.
-    
+
     Args:
         script: A string containing the Python code to execute in Unreal Engine.
-        
+
     Returns:
         Message indicating success, failure, or a request for confirmation.
-        
+
     Note:
         This tool sends the script to Unreal Engine, where it is executed via a temporary file using Unreal's internal
         Python execution system (similar to GEngine->Exec). This method is stable but may not handle Blueprint-specific
@@ -171,13 +219,13 @@ def execute_python_script(script: str) -> str:
 def execute_unreal_command(command: str) -> str:
     """
     Execute an Unreal Engine command-line (CMD) command.
-    
+
     Args:
         command: A string containing the Unreal Engine command to execute (e.g., "obj list", "stat fps").
-        
+
     Returns:
         Message indicating success or failure, including any output or errors.
-        
+
     Note:
         This tool executes commands directly in Unreal Engine's command system, similar to the editor's console.
         It is intended for built-in editor commands (e.g., "stat fps", "obj list") and not for running Python scripts.
@@ -221,7 +269,7 @@ def spawn_object(actor_class: str, location: list = [0, 0, 0], rotation: list = 
                  scale: list = [1, 1, 1], actor_label: str = None) -> str:
     """
     Spawn an object in the Unreal Engine level
-    
+
     Args:
         actor_class: For basic shapes, use: "Cube", "Sphere", "Cylinder", or "Cone".
                      For other actors, use class name like "PointLight" or full path.
@@ -229,7 +277,7 @@ def spawn_object(actor_class: str, location: list = [0, 0, 0], rotation: list = 
         rotation: [Pitch, Yaw, Roll] in degrees
         scale: [X, Y, Z] scale factors
         actor_label: Optional custom name for the actor
-        
+
     Returns:
         Message indicating success or failure
     """
@@ -320,11 +368,11 @@ def edit_component_property(blueprint_path: str, component_name: str, property_n
 def create_material(material_name: str, color: list) -> str:
     """
     Create a new material with the specified color
-    
+
     Args:
         material_name: Name for the new material
         color: [R, G, B] color values (0-1)
-        
+
     Returns:
         Message indicating success or failure, and the material path if successful
     """
@@ -349,12 +397,12 @@ def create_material(material_name: str, color: list) -> str:
 def create_blueprint(blueprint_name: str, parent_class: str = "Actor", save_path: str = "/Game/Blueprints") -> str:
     """
     Create a new Blueprint class
-    
+
     Args:
         blueprint_name: Name for the new Blueprint
         parent_class: Parent class name or path (e.g., "Actor", "/Script/Engine.Actor")
         save_path: Path to save the Blueprint asset
-        
+
     Returns:
         Message indicating success or failure
     """
@@ -376,12 +424,12 @@ def create_blueprint(blueprint_name: str, parent_class: str = "Actor", save_path
 def add_component_to_blueprint(blueprint_path: str, component_class: str, component_name: str = None) -> str:
     """
     Add a component to a Blueprint
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         component_class: Component class to add (e.g., "StaticMeshComponent", "PointLightComponent")
         component_name: Name for the new component (optional)
-        
+
     Returns:
         Message indicating success or failure
     """
@@ -404,14 +452,14 @@ def add_variable_to_blueprint(blueprint_path: str, variable_name: str, variable_
                               default_value: str = None, category: str = "Default") -> str:
     """
     Add a variable to a Blueprint
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         variable_name: Name for the new variable
         variable_type: Type of the variable (e.g., "float", "vector", "boolean")
         default_value: Default value for the variable (optional)
         category: Category for organizing variables in the Blueprint editor (optional)
-        
+
     Returns:
         Message indicating success or failure
     """
@@ -440,13 +488,13 @@ def add_function_to_blueprint(blueprint_path: str, function_name: str,
                               inputs: list = None, outputs: list = None) -> str:
     """
     Add a function to a Blueprint
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         function_name: Name for the new function
         inputs: List of input parameters [{"name": "param1", "type": "float"}, ...]
         outputs: List of output parameters [{"name": "return", "type": "boolean"}, ...]
-        
+
     Returns:
         Message indicating success or failure
     """
@@ -475,7 +523,7 @@ def add_node_to_blueprint(blueprint_path: str, function_id: str, node_type: str,
                           node_position: list = [0, 0], node_properties: dict = None) -> str:
     """
     Add a node to a Blueprint graph
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         function_id: ID of the function to add the node to
@@ -491,14 +539,14 @@ def add_node_to_blueprint(blueprint_path: str, function_id: str, node_type: str,
             at least 400 units apart horizontally and 300 units vertically to avoid overlap
             and ensure a clean, organized graph (e.g., [0, 0], [400, 0], [800, 0] for a chain).
         node_properties: Properties to set on the node (optional)
-    
+
     Returns:
         On success: The node ID (GUID)
         On failure: A response containing "SUGGESTIONS:" followed by alternative node types to try
-    
+
     Note:
-        Function libraries like KismetMathLibrary, KismetSystemLibrary, and KismetStringLibrary 
-        contain most common Blueprint functions. If a simple node name doesn't work, try the 
+        Function libraries like KismetMathLibrary, KismetSystemLibrary, and KismetStringLibrary
+        contain most common Blueprint functions. If a simple node name doesn't work, try the
         full function name, e.g., "Multiply_FloatFloat" instead of just "Multiply".
     """
     if node_properties is None:
@@ -524,10 +572,10 @@ def add_node_to_blueprint(blueprint_path: str, function_id: str, node_type: str,
 def get_node_suggestions(node_type: str) -> str:
     """
     Get suggestions for a node type in Unreal Blueprints
-    
+
     Args:
         node_type: The partial or full node type to get suggestions for (e.g., "Add", "FloatToDouble")
-        
+
     Returns:
         A string indicating success with suggestions or an error message
     """
@@ -552,12 +600,12 @@ def get_node_suggestions(node_type: str) -> str:
 def delete_node_from_blueprint(blueprint_path: str, function_id: str, node_id: str) -> str:
     """
     Delete a node from a Blueprint graph
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         function_id: ID of the function containing the node
         node_id: ID of the node to delete
-        
+
     Returns:
         Success or failure message
     """
@@ -579,11 +627,11 @@ def delete_node_from_blueprint(blueprint_path: str, function_id: str, node_id: s
 def get_all_nodes_in_graph(blueprint_path: str, function_id: str) -> str:
     """
     Get all nodes in a Blueprint graph with their positions and types
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         function_id: ID of the function to get nodes from
-        
+
     Returns:
         JSON string containing all nodes with their GUIDs, types, and positions
     """
@@ -629,10 +677,10 @@ def connect_blueprint_nodes(blueprint_path: str, function_id: str,
 def compile_blueprint(blueprint_path: str) -> str:
     """
     Compile a Blueprint
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
-        
+
     Returns:
         Message indicating success or failure
     """
@@ -654,14 +702,14 @@ def spawn_blueprint_actor(blueprint_path: str, location: list = [0, 0, 0],
                           actor_label: str = None) -> str:
     """
     Spawn a Blueprint actor in the level
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         location: [X, Y, Z] coordinates
         rotation: [Pitch, Yaw, Roll] in degrees
         scale: [X, Y, Z] scale factors
         actor_label: Optional custom name for the actor
-        
+
     Returns:
         Message indicating success or failure
     """
@@ -686,7 +734,7 @@ def spawn_blueprint_actor(blueprint_path: str, location: list = [0, 0, 0],
 # def add_nodes_to_blueprint_bulk(blueprint_path: str, function_id: str, nodes: list) -> str:
 #     """
 #     Add multiple nodes to a Blueprint graph in a single operation
-# 
+#
 #     Args:
 #         blueprint_path: Path to the Blueprint asset
 #         function_id: ID of the function to add the nodes to
@@ -695,12 +743,12 @@ def spawn_blueprint_actor(blueprint_path: str, location: list = [0, 0, 0],
 #             - node_type: Type of node to add (see add_node_to_blueprint for supported types)
 #             - node_position: Position of the node in the graph [X, Y]
 #             - node_properties: Properties to set on the node (optional)
-# 
+#
 #     Returns:
 #         On success: Dictionary mapping your node IDs to the actual node GUIDs created in Unreal
 #         On partial success: Dictionary with successful nodes and suggestions for failed nodes
 #         On failure: Error message with suggestions
-# 
+#
 #     Example success response:
 #         {
 #           "success": true,
@@ -710,7 +758,7 @@ def spawn_blueprint_actor(blueprint_path: str, location: list = [0, 0, 0],
 #             "return_node": "6436796645ED674F3C64A8A94CBA416C"
 #           }
 #         }
-# 
+#
 #     Example partial success with suggestions:
 #         {
 #           "success": true,
@@ -726,7 +774,7 @@ def spawn_blueprint_actor(blueprint_path: str, location: list = [0, 0, 0],
 #             }
 #           }
 #         }
-# 
+#
 #     When you receive suggestions, you can retry adding those nodes using the suggested node types.
 #     """
 #     command = {
@@ -735,7 +783,7 @@ def spawn_blueprint_actor(blueprint_path: str, location: list = [0, 0, 0],
 #         "function_id": function_id,
 #         "nodes": nodes
 #     }
-# 
+#
 #     response = send_to_unreal(command)
 #     if response.get("success"):
 #         node_mapping = response.get("nodes", {})
@@ -782,7 +830,7 @@ def add_component_with_events(blueprint_path: str, component_name: str, componen
 def connect_blueprint_nodes_bulk(blueprint_path: str, function_id: str, connections: list) -> str:
     """
     Connect multiple pairs of nodes in a Blueprint graph
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset
         function_id: ID of the function containing the nodes
@@ -791,7 +839,7 @@ def connect_blueprint_nodes_bulk(blueprint_path: str, function_id: str, connecti
             - source_pin: Name of the source pin
             - target_node_id: ID of the target node
             - target_pin: Name of the target pin
-        
+
     Returns:
         Message indicating success or failure, with details on which connections succeeded or failed
     """
@@ -837,13 +885,13 @@ def get_blueprint_node_guid(blueprint_path: str, graph_type: str = "EventGraph",
                             function_id: str = None) -> str:
     """
     Retrieve the GUID of a pre-existing node in a Blueprint graph.
-    
+
     Args:
         blueprint_path: Path to the Blueprint asset (e.g., "/Game/Blueprints/TestBulkBlueprint")
         graph_type: Type of graph to query ("EventGraph" or "FunctionGraph", default: "EventGraph")
         node_name: Name of the node to find (e.g., "BeginPlay" for EventGraph, optional if using function_id)
         function_id: ID of the function to get the FunctionEntry node for (optional, used with graph_type="FunctionGraph")
-    
+
     Returns:
         Message with the node's GUID or an error if not found
     """
@@ -889,7 +937,7 @@ def is_potentially_destructive(script: str) -> bool:
 def get_all_scene_objects() -> str:
     """
     Retrieve all actors in the current Unreal Engine level.
-    
+
     Returns:
         JSON string of actors with their names, classes, and locations.
     """
@@ -903,7 +951,7 @@ def get_all_scene_objects() -> str:
 def create_project_folder(folder_path: str) -> str:
     """
     Create a new folder in the Unreal project content directory.
-    
+
     Args:
         folder_path: Path relative to /Game (e.g., "FlappyBird/Assets")
     """
@@ -916,7 +964,7 @@ def create_project_folder(folder_path: str) -> str:
 def get_files_in_folder(folder_path: str) -> str:
     """
     List all files in a specified project folder.
-    
+
     Args:
         folder_path: Path relative to /Game (e.g., "FlappyBird/Assets")
     """
@@ -1045,7 +1093,7 @@ def edit_widget_property(user_widget_path: str, widget_name: str, property_name:
 def add_input_binding(action_name: str, key: str) -> str:
     """
     Add an input action binding to Project Settings.
-    
+
     Args:
         action_name: Name of the action (e.g., "Flap")
         key: Key to bind (e.g., "Space Bar")

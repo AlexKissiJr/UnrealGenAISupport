@@ -15,6 +15,14 @@ except ImportError:
     IN_UNREAL = False
     print("Running outside of Unreal Engine environment", file=sys.stderr)
 
+# Try to import the MCP module, but don't fail if it's not available
+try:
+    from mcp.server.fastmcp import FastMCP
+    HAS_MCP = True
+except ImportError:
+    HAS_MCP = False
+    print("MCP module not available, some functionality may be limited", file=sys.stderr)
+
 # Import handlers
 try:
     from handlers import basic_commands, actor_commands, blueprint_commands, python_commands
