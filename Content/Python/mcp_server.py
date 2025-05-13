@@ -120,6 +120,8 @@ class FastMCP:
         This method is called when the script is run directly.
         It keeps the server running and handles incoming requests.
         """
+        import time  # Import time module here to avoid NameError
+
         print(f"MCP Server '{self.name}' running...", file=sys.stderr)
         print(f"Available tools: {', '.join(self.tools.keys())}", file=sys.stderr)
 
