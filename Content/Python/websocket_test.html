@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unreal Engine WebSocket Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .connecting {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0069d9;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+            font-family: monospace;
+        }
+        #log {
+            height: 200px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Unreal Engine WebSocket Test</h1>
+    <div class="container">
+        <div class="card">
+            <h2>Connection Status</h2>
+            <div id="status" class="status disconnected">Disconnected</div>
+            <button id="connectBtn">Connect</button>
+            <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+        <div class="card">
+            <h2>Send Message</h2>
+            <textarea id="message" placeholder="Enter JSON message to send">{
+  "type": "handshake",
+  "message": "Hello from Web Client"
+}</textarea>
+            <button id="sendBtn" disabled>Send Message</button>
+        </div>
+        <div class="card">
+            <h2>Log</h2>
+            <div id="log"></div>
+            <button id="clearBtn">Clear Log</button>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const messageEl = document.getElementById('message');
+        const sendBtn = document.getElementById('sendBtn');
+        const logEl = document.getElementById('log');
+        const clearBtn = document.getElementById('clearBtn');
+
+        // WebSocket
+        let socket = null;
+        let isConnected = false;
+        let isConnecting = false;
+
+        // Log function
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = type;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // Update UI based on connection state
+        function updateUI() {
+            if (isConnected) {
+                statusEl.className = 'status connected';
+                statusEl.textContent = 'Connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                sendBtn.disabled = false;
+            } else if (isConnecting) {
+                statusEl.className = 'status connecting';
+                statusEl.textContent = 'Connecting...';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = true;
+                sendBtn.disabled = true;
+            } else {
+                statusEl.className = 'status disconnected';
+                statusEl.textContent = 'Disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                sendBtn.disabled = true;
+            }
+        }
+
+        // Connect to WebSocket server
+        function connect() {
+            if (isConnected || isConnecting) return;
+
+            isConnecting = true;
+            updateUI();
+
+            try {
+                const host = 'localhost';
+                const port = '9877';
+                const wsUrl = `ws://${host}:${port}`;
+                
+                log(`Connecting to ${wsUrl}...`);
+                
+                socket = new WebSocket(wsUrl);
+
+                socket.onopen = () => {
+                    log('Connected to Unreal Engine', 'success');
+                    isConnected = true;
+                    isConnecting = false;
+                    updateUI();
+                };
+
+                socket.onclose = () => {
+                    log('Disconnected from Unreal Engine', 'error');
+                    isConnected = false;
+                    isConnecting = false;
+                    socket = null;
+                    updateUI();
+                };
+
+                socket.onerror = (error) => {
+                    log(`WebSocket error: ${error}`, 'error');
+                    isConnecting = false;
+                    updateUI();
+                };
+
+                socket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`Received: ${JSON.stringify(data, null, 2)}`, 'success');
+                    } catch (error) {
+                        log(`Error parsing message: ${error}`, 'error');
+                        log(`Raw message: ${event.data}`, 'info');
+                    }
+                };
+            } catch (error) {
+                log(`Error connecting: ${error}`, 'error');
+                isConnecting = false;
+                updateUI();
+            }
+        }
+
+        // Disconnect from WebSocket server
+        function disconnect() {
+            if (!isConnected) return;
+
+            try {
+                socket.close();
+                log('Disconnecting...', 'info');
+            } catch (error) {
+                log(`Error disconnecting: ${error}`, 'error');
+            }
+        }
+
+        // Send message to WebSocket server
+        function sendMessage() {
+            if (!isConnected || !socket) return;
+
+            try {
+                const message = messageEl.value.trim();
+                if (!message) {
+                    log('Message is empty', 'error');
+                    return;
+                }
+
+                try {
+                    // Validate JSON
+                    const jsonObj = JSON.parse(message);
+                    socket.send(message);
+                    log(`Sent: ${JSON.stringify(jsonObj, null, 2)}`, 'info');
+                } catch (error) {
+                    log(`Invalid JSON: ${error}`, 'error');
+                }
+            } catch (error) {
+                log(`Error sending message: ${error}`, 'error');
+            }
+        }
+
+        // Event listeners
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        sendBtn.addEventListener('click', sendMessage);
+        clearBtn.addEventListener('click', () => {
+            logEl.innerHTML = '';
+        });
+
+        // Initialize UI
+        updateUI();
+    </script>
+</body>
+</html>
