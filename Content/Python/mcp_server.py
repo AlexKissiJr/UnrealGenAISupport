@@ -3,34 +3,116 @@ import json
 import sys
 import os
 import re
+import inspect
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union, get_type_hints
 
-# Try to import the MCP module, but don't fail if it's not available
-try:
-    from mcp.server.fastmcp import FastMCP
-    HAS_MCP = True
-except ImportError:
-    print("MCP module not available, creating a minimal implementation", file=sys.stderr)
-    HAS_MCP = False
+# Define FastMCP class directly in this file to avoid import issues
+class FastMCP:
+    """
+    A simple MCP (Model-Controller-Presenter) server for Unreal Engine.
+    This is a lightweight implementation to support the existing mcp_server.py.
+    """
 
-    # Create a minimal FastMCP implementation
-    class FastMCP:
-        def __init__(self, name):
-            self.name = name
-            self.tools = {}
+    def __init__(self, name: str):
+        """
+        Initialize the FastMCP server.
 
-        def tool(self, description=None):
-            def decorator(func):
-                self.tools[func.__name__] = func
-                return func
+        Args:
+            name: The name of the server
+        """
+        self.name = name
+        self.tools = {}
+        self.tool_descriptions = {}
 
-            # Handle case where decorator is used without parentheses
-            if callable(description):
-                func = description
-                description = None
-                return decorator(func)
+    def tool(self, description: str = None):
+        """
+        Decorator to register a function as a tool.
 
-            return decorator
+        Args:
+            description: Optional description of the tool
+        """
+        def decorator(func):
+            tool_name = func.__name__
+            self.tools[tool_name] = func
+
+            # Get the function's docstring as the description if not provided
+            if description is None and func.__doc__:
+                self.tool_descriptions[tool_name] = func.__doc__.strip()
+            else:
+                self.tool_descriptions[tool_name] = description or ""
+
+            return func
+
+        # Handle case where decorator is used without parentheses
+        if callable(description):
+            func = description
+            description = None
+            return decorator(func)
+
+        return decorator
+
+    def get_tools(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get all registered tools with their descriptions and parameters.
+
+        Returns:
+            A dictionary of tool names to tool information
+        """
+        tools_info = {}
+
+        for tool_name, func in self.tools.items():
+            # Get parameter information
+            sig = inspect.signature(func)
+            params = []
+
+            for param_name, param in sig.parameters.items():
+                param_info = {
+                    "name": param_name,
+                    "required": param.default == inspect.Parameter.empty
+                }
+
+                # Try to get type hints
+                try:
+                    type_hints = get_type_hints(func)
+                    if param_name in type_hints:
+                        param_info["type"] = str(type_hints[param_name])
+                except:
+                    pass
+
+                params.append(param_info)
+
+            # Add tool information
+            tools_info[tool_name] = {
+                "description": self.tool_descriptions.get(tool_name, ""),
+                "parameters": params
+            }
+
+        return tools_info
+
+    def call_tool(self, tool_name: str, **kwargs) -> Any:
+        """
+        Call a registered tool by name.
+
+        Args:
+            tool_name: The name of the tool to call
+            **kwargs: Arguments to pass to the tool
+
+        Returns:
+            The result of the tool call
+        """
+        if tool_name not in self.tools:
+            raise ValueError(f"Tool '{tool_name}' not found")
+
+        tool = self.tools[tool_name]
+
+        try:
+            return tool(**kwargs)
+        except Exception as e:
+            print(f"Error calling tool '{tool_name}': {str(e)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            return f"Error calling tool '{tool_name}': {str(e)}"
 
 
 # THIS FILE WILL RUN OUTSIDE THE UNREAL ENGINE SCOPE,
