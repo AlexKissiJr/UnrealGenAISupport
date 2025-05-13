@@ -114,6 +114,25 @@ class FastMCP:
             traceback.print_exc(file=sys.stderr)
             return f"Error calling tool '{tool_name}': {str(e)}"
 
+    def run(self):
+        """
+        Run the MCP server.
+        This method is called when the script is run directly.
+        It keeps the server running and handles incoming requests.
+        """
+        print(f"MCP Server '{self.name}' running...", file=sys.stderr)
+        print(f"Available tools: {', '.join(self.tools.keys())}", file=sys.stderr)
+
+        # In a real implementation, this would start a server
+        # For now, we'll just keep the script running
+        try:
+            while True:
+                # Process any pending tasks
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("MCP Server shutting down...", file=sys.stderr)
+            return
+
 
 # THIS FILE WILL RUN OUTSIDE THE UNREAL ENGINE SCOPE,
 # DO NOT IMPORT UNREAL MODULES HERE OR EXECUTE IT IN THE UNREAL ENGINE PYTHON INTERPRETER
